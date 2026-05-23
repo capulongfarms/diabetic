@@ -1,5 +1,6 @@
 # Diabetic Records Tracker
 
+
 A personal health records dashboard for managing diabetic and medical data, with support for tracking a second person (spouse/family member). Hosted on GitHub Pages and powered by Firebase Firestore with localStorage fallback.
 
 ## Features
