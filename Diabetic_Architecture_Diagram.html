@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Diabetic Records — System Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #f0f4f8;
+    color: #1a2a3a;
+    padding: 40px 24px;
+    min-height: 100vh;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #0a1e3c;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 0.9rem;
+    color: #5a7080;
+    margin-bottom: 48px;
+  }
+
+  /* ── DIAGRAM CANVAS ── */
+  .canvas {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+  }
+
+  /* ── ROWS ── */
+  .row {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 0;
+    position: relative;
+  }
+
+  /* ── BOXES ── */
+  .box {
+    border-radius: 14px;
+    padding: 20px 24px;
+    width: 220px;
+    text-align: center;
+    position: relative;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.10);
+    flex-shrink: 0;
+  }
+  .box .icon { font-size: 2.2rem; margin-bottom: 8px; display: block; }
+  .box .label {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 6px;
+  }
+  .box .sublabel {
+    font-size: 0.75rem;
+    line-height: 1.4;
+    opacity: 0.82;
+  }
+  .box .tag {
+    display: inline-block;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-top: 8px;
+  }
+
+  /* Box colours */
+  .box-dev   { background: #e8f0fe; border: 2px solid #4a80d4; }
+  .box-dev .label { color: #1a3a8a; }
+  .box-dev .tag { background: #c2d4f8; color: #1a3a8a; }
+
+  .box-github { background: #1a1a2e; border: 2px solid #444; color: #e0e0e0; }
+  .box-github .label { color: #fff; }
+  .box-github .sublabel { color: #aaa; }
+  .box-github .tag { background: #333; color: #ccc; }
+
+  .box-pages { background: #fff8e1; border: 2px solid #f0b429; }
+  .box-pages .label { color: #7a4e00; }
+  .box-pages .tag { background: #ffe082; color: #7a4e00; }
+
+  .box-firebase { background: #fff3e0; border: 2px solid #f57c00; }
+  .box-firebase .label { color: #bf360c; }
+  .box-firebase .sublabel { color: #7a3a00; }
+  .box-firebase .tag { background: #ffe0b2; color: #bf360c; }
+
+  .box-device { background: #e8f5e9; border: 2px solid #43a047; }
+  .box-device .label { color: #1b5e20; }
+  .box-device .tag { background: #c8e6c9; color: #1b5e20; }
+
+  .box-storage { background: #f3e5f5; border: 2px solid #8e24aa; }
+  .box-storage .label { color: #4a148c; }
+  .box-storage .tag { background: #e1bee7; color: #4a148c; }
+
+  /* ── SVG ARROWS ── */
+  .arrows {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .arrow-line {
+    fill: none;
+    stroke-width: 2.2;
+    marker-end: url(#arr);
+  }
+  .cl-blue   { stroke: #4a80d4; }
+  .cl-dark   { stroke: #555; }
+  .cl-yellow { stroke: #d4a017; }
+  .cl-orange { stroke: #f57c00; }
+  .cl-purple { stroke: #8e24aa; }
+  .cl-green  { stroke: #2e7d32; }
+  .cl-dashed { stroke-dasharray: 7 4; }
+
+  .arrow-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    fill: #333;
+    text-anchor: middle;
+  }
+
+  /* ── FLOW LEGEND ── */
+  .legend {
+    max-width: 1200px;
+    margin: 48px auto 0;
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px 32px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.07);
+  }
+  .legend h2 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0a1e3c;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .flows { display: flex; flex-wrap: wrap; gap: 12px 32px; }
+  .flow-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: calc(50% - 16px);
+    min-width: 260px;
+  }
+  .flow-num {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .flow-text { font-size: 0.83rem; line-height: 1.5; color: #2a3a4a; }
+  .flow-text strong { display: block; font-size: 0.87rem; margin-bottom: 1px; }
+
+  /* ── SEQUENCE SECTION ── */
+  .sequence {
+    max-width: 1200px;
+    margin: 24px auto 0;
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px 32px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.07);
+  }
+  .sequence h2 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0a1e3c;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .seq-cols { display: flex; gap: 24px; flex-wrap: wrap; }
+  .seq-col { flex: 1; min-width: 220px; }
+  .seq-col h3 { font-size: 0.82rem; font-weight: 700; color: #555; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
+  .step {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .step-dot {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    font-size: 0.7rem; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .step-text { font-size: 0.82rem; line-height: 1.5; color: #2a3a4a; }
+
+  .bg-blue   { background: #dbeafe; color: #1e3a8a; }
+  .bg-dark   { background: #e5e7eb; color: #111; }
+  .bg-yellow { background: #fef9c3; color: #7a4e00; }
+  .bg-orange { background: #ffe0b2; color: #bf360c; }
+  .bg-purple { background: #ede7f6; color: #4a148c; }
+  .bg-green  { background: #dcfce7; color: #14532d; }
+  .bg-red    { background: #fee2e2; color: #991b1b; }
+
+  /* ── KEY FACTS ── */
+  .facts {
+    max-width: 1200px;
+    margin: 24px auto 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+  }
+  .fact {
+    background: #fff;
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+    border-left: 4px solid;
+  }
+  .fact.blue   { border-color: #4a80d4; }
+  .fact.yellow { border-color: #f0b429; }
+  .fact.orange { border-color: #f57c00; }
+  .fact.purple { border-color: #8e24aa; }
+  .fact.green  { border-color: #43a047; }
+  .fact.red    { border-color: #e53935; }
+  .fact .fact-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 4px; }
+  .fact .fact-value { font-size: 1rem; font-weight: 700; color: #1a2a3a; line-height: 1.3; }
+  .fact .fact-sub { font-size: 0.75rem; color: #666; margin-top: 2px; }
+
+  /* ── DASHBOARD GRID ── */
+  .dash-grid {
+    max-width: 1200px;
+    margin: 24px auto 0;
+    background: #fff;
+    border-radius: 14px;
+    padding: 28px 32px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.07);
+  }
+  .dash-grid h2 {
+    font-size: 1rem; font-weight: 700; color: #0a1e3c;
+    margin-bottom: 18px; padding-bottom: 10px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .dash-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+  }
+  .dash-card {
+    border-radius: 10px;
+    padding: 14px 16px;
+    border: 2px solid;
+  }
+  .dash-card .dc-icon { font-size: 1.4rem; margin-bottom: 6px; display: block; }
+  .dash-card .dc-name { font-size: 0.88rem; font-weight: 800; margin-bottom: 4px; }
+  .dash-card .dc-id { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.6; margin-bottom: 6px; display: block; }
+  .dash-card .dc-desc { font-size: 0.78rem; line-height: 1.5; }
+
+  .dc-teal   { background: #e0f2f1; border-color: #00897b; }
+  .dc-teal .dc-name { color: #004d40; }
+  .dc-blue   { background: #e3f2fd; border-color: #1976d2; }
+  .dc-blue .dc-name { color: #0d47a1; }
+  .dc-indigo { background: #e8eaf6; border-color: #3949ab; }
+  .dc-indigo .dc-name { color: #1a237e; }
+  .dc-green  { background: #e8f5e9; border-color: #43a047; }
+  .dc-green .dc-name { color: #1b5e20; }
+  .dc-red    { background: #ffebee; border-color: #e53935; }
+  .dc-red .dc-name { color: #b71c1c; }
+  .dc-amber  { background: #fff8e1; border-color: #ffb300; }
+  .dc-amber .dc-name { color: #7a4e00; }
+  .dc-pink   { background: #fce4ec; border-color: #e91e63; }
+  .dc-pink .dc-name { color: #880e4f; }
+  .dc-gray   { background: #f5f5f5; border-color: #757575; }
+  .dc-gray .dc-name { color: #212121; }
+
+  /* comparison table */
+  .ctable {
+    width: 100%; border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+  .ctable th {
+    text-align: left; font-size: 0.72rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    color: #888; padding: 6px 12px 10px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .ctable td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: top;
+    line-height: 1.45;
+  }
+  .ctable tr:last-child td { border-bottom: none; }
+  .ctable td:first-child { font-weight: 600; color: #1a2a3a; width: 20%; }
+  .ctable td:nth-child(2) { width: 20%; }
+  .ctable td.yes { color: #1b5e20; font-weight: 700; }
+  .ctable td.no  { color: #b71c1c; font-weight: 700; }
+  .ctable td.note { color: #5a7080; font-size: 0.78rem; }
+  .ctable tr:nth-child(even) td { background: #fafafa; }
+
+  .comp-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin-bottom: 10px; font-size: 0.83rem; line-height: 1.45; color: #2a3a4a;
+  }
+  .comp-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+
+  .footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #aaa;
+    margin-top: 40px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Diabetic Records Tracker — System Architecture</h1>
+<p class="subtitle">How GitHub Pages, Firebase Firestore, and the Browser work together &nbsp;·&nbsp; Personal Health Dashboard</p>
+
+<!-- ══════════════════════════════════════════════
+     DIAGRAM
+     ══════════════════════════════════════════════ -->
+<div class="canvas" id="canvas">
+
+  <!-- ROW 1: Developer + GitHub + GitHub Pages + Firebase -->
+  <div class="row" id="row1" style="margin-bottom: 0;">
+
+    <div class="box box-dev" id="b-dev">
+      <span class="icon">🖥️</span>
+      <div class="label">Developer Workstation</div>
+      <div class="sublabel">Edits <code>index.html</code><br>using Claude Code</div>
+      <span class="tag">Local Machine</span>
+    </div>
+
+    <div class="box box-github" id="b-gh">
+      <span class="icon">🐙</span>
+      <div class="label">GitHub Repository</div>
+      <div class="sublabel">polcapulong-capulongfarms/<br>diabetic</div>
+      <span class="tag">Version Control</span>
+    </div>
+
+    <div class="box box-pages" id="b-pages">
+      <span class="icon">🌐</span>
+      <div class="label">GitHub Pages CDN</div>
+      <div class="sublabel">Serves the single <code>index.html</code><br>file globally, for free</div>
+      <span class="tag">Static Hosting</span>
+    </div>
+
+    <div class="box box-firebase" id="b-firebase">
+      <span class="icon">🔥</span>
+      <div class="label">Firebase Firestore</div>
+      <div class="sublabel">Cloud database — readings, tests,<br>spouse treatment &amp; visits<br>(4 collections, single user)</div>
+      <span class="tag">Primary Database</span>
+    </div>
+
+  </div>
+
+  <!-- SPACER FOR ARROWS -->
+  <div style="height: 100px;"></div>
+
+  <!-- ROW 2: User Device + localStorage -->
+  <div class="row" id="row2">
+
+    <div class="box box-device" id="b-desk">
+      <span class="icon">💻</span>
+      <div class="label">Owner's Browser</div>
+      <div class="sublabel">Single private user —<br>personal health records<br>on PC, tablet, or phone</div>
+      <span class="tag">User Device</span>
+    </div>
+
+    <div class="box box-storage" id="b-store">
+      <span class="icon">🗄️</span>
+      <div class="label">Browser localStorage</div>
+      <div class="sublabel">
+        Fallback storage if<br>Firestore is unreachable.<br>Also stores PIN hash &amp; prefs.
+      </div>
+      <span class="tag">Fallback / Prefs</span>
+    </div>
+
+  </div>
+
+  <!-- ── SVG ARROWS ── -->
+  <svg class="arrows" id="svg-arrows" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arr" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 9 3.5, 0 7" fill="#555"/>
+      </marker>
+      <marker id="arr-blue" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 9 3.5, 0 7" fill="#4a80d4"/>
+      </marker>
+      <marker id="arr-yellow" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 9 3.5, 0 7" fill="#d4a017"/>
+      </marker>
+      <marker id="arr-orange" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 9 3.5, 0 7" fill="#f57c00"/>
+      </marker>
+      <marker id="arr-purple" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 9 3.5, 0 7" fill="#8e24aa"/>
+      </marker>
+      <marker id="arr-green" markerWidth="9" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 9 3.5, 0 7" fill="#2e7d32"/>
+      </marker>
+    </defs>
+  </svg>
+
+</div><!-- /canvas -->
+
+
+<!-- ══════════════════════════════════════════════
+     DATA FLOW LEGEND
+     ══════════════════════════════════════════════ -->
+<div class="legend">
+  <h2>Data Flow — What happens on each arrow</h2>
+  <div class="flows">
+
+    <div class="flow-item">
+      <div class="flow-num bg-blue">①</div>
+      <div class="flow-text">
+        <strong>Developer → GitHub &nbsp;(git push)</strong>
+        Claude Code edits <code>index.html</code> locally, then commits and pushes to the GitHub repository using the <code>polcapulong-capulongfarms</code> account.
+      </div>
+    </div>
+
+    <div class="flow-item">
+      <div class="flow-num bg-dark">②</div>
+      <div class="flow-text">
+        <strong>GitHub → GitHub Pages &nbsp;(auto-deploy)</strong>
+        GitHub detects a new commit on <code>main</code> and automatically rebuilds the Pages site. Takes ~2–5 minutes. No manual step needed.
+      </div>
+    </div>
+
+    <div class="flow-item">
+      <div class="flow-num bg-yellow">③</div>
+      <div class="flow-text">
+        <strong>GitHub Pages → Browser &nbsp;(page load)</strong>
+        When the owner opens the URL, GitHub Pages serves the single <code>index.html</code> file (with all embedded CSS and JavaScript) over HTTPS. PIN login is required before data is shown.
+      </div>
+    </div>
+
+    <div class="flow-item">
+      <div class="flow-num bg-orange">④</div>
+      <div class="flow-text">
+        <strong>Firestore → Browser &nbsp;(read on startup)</strong>
+        After PIN login, <code>dbAll(name)</code> fetches all docs from 4 collections in parallel: <code>readings</code>, <code>tests</code>, <code>wifesum</code>, and <code>wifev</code>. This is the live data. If Firestore is unreachable, the app falls back to localStorage automatically.
+      </div>
+    </div>
+
+    <div class="flow-item">
+      <div class="flow-num bg-orange">⑤</div>
+      <div class="flow-text">
+        <strong>Browser → Firestore &nbsp;(write on every change)</strong>
+        When the owner adds, edits, or deletes a record, <code>dbAdd()</code>, <code>dbSet()</code>, or <code>dbDel()</code> writes to Firestore. All write operations require PIN re-entry via <code>_guardedAsync()</code>. Firestore is the single source of truth.
+      </div>
+    </div>
+
+    <div class="flow-item">
+      <div class="flow-num bg-purple">⑥</div>
+      <div class="flow-text">
+        <strong>Browser ↔ localStorage &nbsp;(fallback)</strong>
+        localStorage stores the PIN hash, user preferences (names, glucose/BP thresholds, font size), and a Firebase config override. If Firestore is unreachable, all 4 collections fall back to localStorage automatically using the same read/write functions.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     STARTUP SEQUENCE + SAVE SEQUENCE
+     ══════════════════════════════════════════════ -->
+<div class="sequence">
+  <h2>Step-by-step Sequences</h2>
+  <div class="seq-cols">
+
+    <div class="seq-col">
+      <h3>When the owner opens the app</h3>
+
+      <div class="step">
+        <div class="step-dot bg-yellow">1</div>
+        <div class="step-text">Browser downloads <code>index.html</code> from GitHub Pages CDN (includes all CSS, JS, and Chart.js / XLSX loaded from CDN)</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-red">2</div>
+        <div class="step-text">PIN login screen appears — SHA-256 hash of entered PIN is compared against stored hash. 3 wrong attempts → 30-second lockout.</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-green">3</div>
+        <div class="step-text">PIN matches → session token written to <code>sessionStorage</code>. App shell loads.</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-orange">4</div>
+        <div class="step-text"><code>dbAll()</code> runs for all 4 collections — <code>readings</code>, <code>tests</code>, <code>wifesum</code>, <code>wifev</code> — fetched from Firestore in parallel.</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-purple">5</div>
+        <div class="step-text"><strong>Firestore offline:</strong> falls back to localStorage copies. App still fully functional with last known data.</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-green">6</div>
+        <div class="step-text"><strong>Dashboard fully loads</strong> — Summary panel renders stats and 30-day trend chart. All 8 panels become navigable.</div>
+      </div>
+    </div>
+
+    <div class="seq-col">
+      <h3>When the owner saves a record</h3>
+
+      <div class="step">
+        <div class="step-dot bg-green">1</div>
+        <div class="step-text">Owner opens a form (new reading, lab test, spouse visit, etc.) and fills in the data</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-red">2</div>
+        <div class="step-text">On submit, <code>_guardedAsync()</code> intercepts — PIN modal appears to re-verify identity before any write proceeds</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-orange">3</div>
+        <div class="step-text">PIN confirmed → <code>dbAdd()</code> or <code>dbSet()</code> writes the record to Firestore</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-purple">4</div>
+        <div class="step-text">If Firestore write fails, the same function writes to localStorage instead — data is never lost</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-green">5</div>
+        <div class="step-text">Toast notification: "Saved!" — dashboard re-renders with updated data immediately</div>
+      </div>
+    </div>
+
+    <div class="seq-col">
+      <h3>When the app is updated</h3>
+
+      <div class="step">
+        <div class="step-dot bg-blue">1</div>
+        <div class="step-text">Claude Code edits <code>index.html</code> on the developer workstation</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-blue">2</div>
+        <div class="step-text"><code>git commit</code> + <code>git push</code> to GitHub repository</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-dark">3</div>
+        <div class="step-text">GitHub automatically triggers a Pages deployment</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-dark">4</div>
+        <div class="step-text">~2–5 minutes later, new version is live</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-orange">5</div>
+        <div class="step-text">All health records in Firestore are untouched — readings, tests, and spouse data survive every update</div>
+      </div>
+      <div class="step">
+        <div class="step-dot bg-green">6</div>
+        <div class="step-text">Owner refreshes the browser — new app version loads instantly with all existing data</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     KEY FACTS
+     ══════════════════════════════════════════════ -->
+<div class="facts">
+  <div class="fact blue">
+    <div class="fact-label">Code Storage</div>
+    <div class="fact-value">GitHub</div>
+    <div class="fact-sub">Free · version-controlled · auto-deploys on push</div>
+  </div>
+  <div class="fact yellow">
+    <div class="fact-label">App Hosting</div>
+    <div class="fact-value">GitHub Pages</div>
+    <div class="fact-sub">Free · global CDN · HTTPS · no server to manage</div>
+  </div>
+  <div class="fact orange">
+    <div class="fact-label">Database</div>
+    <div class="fact-value">Firebase Firestore</div>
+    <div class="fact-sub">4 collections · single fixed user · localStorage as fallback</div>
+  </div>
+  <div class="fact purple">
+    <div class="fact-label">Auth &amp; Prefs</div>
+    <div class="fact-value">Browser localStorage</div>
+    <div class="fact-sub">PIN hash · glucose/BP thresholds · names · font size</div>
+  </div>
+  <div class="fact red">
+    <div class="fact-label">Security</div>
+    <div class="fact-value">SHA-256 PIN</div>
+    <div class="fact-sub">6-digit PIN · brute-force lockout · every write is guarded</div>
+  </div>
+  <div class="fact green">
+    <div class="fact-label">Monthly Cost</div>
+    <div class="fact-value">₱0</div>
+    <div class="fact-sub">GitHub Pages + Firebase free tier — no custom server</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     DASHBOARD PANELS
+     ══════════════════════════════════════════════ -->
+<div class="dash-grid">
+  <h2>Dashboard Panels — 8 Views in One App</h2>
+  <div class="dash-cards">
+
+    <div class="dash-card dc-teal">
+      <span class="dc-icon">📊</span>
+      <div class="dc-name">Summary</div>
+      <span class="dc-id">dash-summary</span>
+      <div class="dc-desc">Overview stats cards (avg glucose, BP, weight) and a 30-day glucose trend chart. Entry point after login.</div>
+    </div>
+
+    <div class="dash-card dc-blue">
+      <span class="dc-icon">📋</span>
+      <div class="dc-name">Readings</div>
+      <span class="dc-id">dash-readings</span>
+      <div class="dc-desc">Daily log table — glucose, BP, weight, meals, medications. Sortable, searchable, paginated (50/page). Full CRUD. CSV import/export.</div>
+    </div>
+
+    <div class="dash-card dc-indigo">
+      <span class="dc-icon">📈</span>
+      <div class="dc-name">Charts</div>
+      <span class="dc-id">dash-charts</span>
+      <div class="dc-desc">Chart.js visualizations for glucose, blood pressure, and weight. Toggle by day, month, or year. 6 chart types total.</div>
+    </div>
+
+    <div class="dash-card dc-green">
+      <span class="dc-icon">🥗</span>
+      <div class="dc-name">Diet</div>
+      <span class="dc-id">dash-diet</span>
+      <div class="dc-desc">Meal impact analysis — ranks meals by average glucose effect. Best and worst meal lists with recommendations.</div>
+    </div>
+
+    <div class="dash-card dc-red">
+      <span class="dc-icon">❤️</span>
+      <div class="dc-name">Blood Pressure</div>
+      <span class="dc-id">dash-bp</span>
+      <div class="dc-desc">Dedicated BP analysis — systolic and diastolic trends, averages, and threshold-based status indicators.</div>
+    </div>
+
+    <div class="dash-card dc-amber">
+      <span class="dc-icon">🧪</span>
+      <div class="dc-name">Lab Tests</div>
+      <span class="dc-id">dash-tests</span>
+      <div class="dc-desc">Split-pane view — session list on left, per-criterion results on right. Tracks HbA1c, lipids, kidney function, etc. Import/export.</div>
+    </div>
+
+    <div class="dash-card dc-pink">
+      <span class="dc-icon">👩‍⚕️</span>
+      <div class="dc-name">Spouse Tracking</div>
+      <span class="dc-id">dash-wife</span>
+      <div class="dc-desc">Two sub-sections: treatment periods (<code>wifesum</code>) and medical visit records (<code>wifev</code>). Independent CRUD from owner records.</div>
+    </div>
+
+    <div class="dash-card dc-gray">
+      <span class="dc-icon">⚙️</span>
+      <div class="dc-name">Settings</div>
+      <span class="dc-id">dash-settings</span>
+      <div class="dc-desc">Names, glucose/BP thresholds, font size, PIN change, Firebase config override, JSON backup/restore, full Excel export.</div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     DATA STRUCTURE
+     ══════════════════════════════════════════════ -->
+<div class="sequence" style="margin-top:24px;">
+  <h2>Data Structure — Firestore Collections &amp; localStorage Fallback</h2>
+  <table class="ctable" style="margin-top:4px;">
+    <thead>
+      <tr>
+        <th>Collection</th>
+        <th>Firestore Path</th>
+        <th>Written by</th>
+        <th>localStorage Fallback Key</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Daily Readings</td>
+        <td><code>users/{UID}/readings</code></td>
+        <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
+        <td><code>diab_readings</code></td>
+        <td>One doc per reading entry. Fields: date, glucose (mmol/L), systolic, diastolic, weight (kg), meal description, medications, notes.</td>
+      </tr>
+      <tr>
+        <td>Lab Tests</td>
+        <td><code>users/{UID}/tests</code></td>
+        <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
+        <td><code>diab_tests</code></td>
+        <td>One doc per test session. Each session contains an array of criteria results (e.g. HbA1c, cholesterol, creatinine). Session date and lab name stored at the doc level.</td>
+      </tr>
+      <tr>
+        <td>Spouse Treatment Periods</td>
+        <td><code>users/{UID}/wifesum</code></td>
+        <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
+        <td><code>diab_wifesum</code></td>
+        <td>One doc per treatment period. Tracks condition, medication, dosage, and date range for the spouse/secondary tracked person.</td>
+      </tr>
+      <tr>
+        <td>Spouse Visit Records</td>
+        <td><code>users/{UID}/wifev</code></td>
+        <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
+        <td><code>diab_wifev</code></td>
+        <td>One doc per medical visit. Stores visit date, doctor, clinic, findings, and next appointment.</td>
+      </tr>
+      <tr>
+        <td>PIN &amp; Preferences</td>
+        <td>Not synced to Firestore</td>
+        <td>Settings panel</td>
+        <td><code>prefs</code>, <code>diab_pin</code></td>
+        <td>Device-local only. <code>prefs</code> stores names, glucose thresholds (high/low mmol/L), BP thresholds (systolic/diastolic). <code>diab_pin</code> stores the SHA-256 PIN hash.</td>
+      </tr>
+      <tr>
+        <td>Firebase Config Override</td>
+        <td>Not in Firestore</td>
+        <td>Settings panel</td>
+        <td><code>diab_firebase_config</code></td>
+        <td>Optional per-device override of the hardcoded Firebase config. Useful if migrating to a different Firebase project.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="margin-top:14px;padding:12px 16px;background:#fff3e0;border-left:4px solid #f57c00;border-radius:8px;font-size:0.82rem;color:#bf360c;line-height:1.6;">
+    <strong>Important:</strong> Firestore is the primary store. The fixed user UID (<code>64oGBkwTKJOfCpGUW10eTrLdMgJ2</code>) means all data is scoped to a single owner — this is by design for a private personal health app. localStorage is the fallback, not a cache: it is only read when Firestore is unreachable, not on every page load.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     PIN ACCESS CONTROL
+     ══════════════════════════════════════════════ -->
+<div class="sequence" style="margin-top:24px;">
+  <h2>PIN Access Control — What Requires a PIN</h2>
+  <p style="font-size:0.83rem;color:#5a7080;margin-bottom:18px;margin-top:6px;">Viewing data requires only a valid session (PIN entered on page load). Every write operation — add, edit, delete, import, export, backup, restore — re-prompts for the PIN via <code>_guardedAsync()</code>. This prevents accidental or unauthorized changes even if the browser is left open.</p>
+
+  <div style="display:flex;gap:20px;flex-wrap:wrap;">
+
+    <div style="flex:1;min-width:280px;">
+      <div style="background:#f0fdf4;border:2px solid #43a047;border-radius:12px;padding:18px 20px;">
+        <h3 style="font-size:0.82rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#1b5e20;margin-bottom:14px;">PIN on login only — read operations</h3>
+        <div class="comp-row"><span class="comp-icon">📊</span><span>View Summary stats and glucose trend chart</span></div>
+        <div class="comp-row"><span class="comp-icon">📋</span><span>Browse, search, and filter readings table</span></div>
+        <div class="comp-row"><span class="comp-icon">📈</span><span>View all chart visualizations (glucose, BP, weight)</span></div>
+        <div class="comp-row"><span class="comp-icon">🥗</span><span>View diet analysis and meal rankings</span></div>
+        <div class="comp-row"><span class="comp-icon">❤️</span><span>View blood pressure trends and averages</span></div>
+        <div class="comp-row"><span class="comp-icon">🧪</span><span>View lab test sessions and results</span></div>
+        <div class="comp-row"><span class="comp-icon">👩‍⚕️</span><span>View spouse treatment periods and visit records</span></div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:280px;">
+      <div style="background:#fff5f5;border:2px solid #e53935;border-radius:12px;padding:18px 20px;">
+        <h3 style="font-size:0.82rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#b71c1c;margin-bottom:14px;">PIN re-entry required — every write</h3>
+        <div class="comp-row"><span class="comp-icon">➕</span><span>Add new reading, lab test session, or spouse record</span></div>
+        <div class="comp-row"><span class="comp-icon">✏️</span><span>Edit any existing record</span></div>
+        <div class="comp-row"><span class="comp-icon">🗑️</span><span>Delete any record</span></div>
+        <div class="comp-row"><span class="comp-icon">📥</span><span>Import CSV (readings, tests, spouse visits)</span></div>
+        <div class="comp-row"><span class="comp-icon">📤</span><span>Export data to CSV or Excel workbook</span></div>
+        <div class="comp-row"><span class="comp-icon">💾</span><span>Download JSON backup</span></div>
+        <div class="comp-row"><span class="comp-icon">♻️</span><span>Restore from JSON backup</span></div>
+        <div class="comp-row"><span class="comp-icon">⚙️</span><span>Save preferences (names, thresholds, font size)</span></div>
+        <div class="comp-row"><span class="comp-icon">🔑</span><span>Change PIN</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top:14px;padding:12px 16px;background:#e8f0fe;border-left:4px solid #4a80d4;border-radius:8px;font-size:0.82rem;color:#1a3a8a;line-height:1.6;">
+    <strong>How the PIN session works:</strong> On successful login, a session token is written to <code>sessionStorage</code>. This survives page refreshes within the same browser tab but is cleared when the tab is closed — so the owner must re-enter the PIN on each new browser session. For individual write operations, <code>_guardedAsync(fn)</code> wraps the action: it shows the PIN modal, verifies the hash, then calls <code>fn()</code> only on success. Brute-force protection applies to both the login screen and mid-session PIN prompts: 3 wrong attempts → 30-second lockout.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     DRAW SVG ARROWS WITH JS
+     ══════════════════════════════════════════════ -->
+<script>
+window.addEventListener('load', () => {
+  const svg = document.getElementById('svg-arrows');
+  const canvas = document.getElementById('canvas');
+  const cr = canvas.getBoundingClientRect();
+
+  function rel(el) {
+    const r = el.getBoundingClientRect();
+    return {
+      left:   r.left   - cr.left,
+      right:  r.right  - cr.left,
+      top:    r.top    - cr.top,
+      bottom: r.bottom - cr.top,
+      cx:     (r.left + r.right) / 2 - cr.left,
+      cy:     (r.top  + r.bottom) / 2 - cr.top,
+    };
+  }
+
+  svg.setAttribute('viewBox', `0 0 ${canvas.offsetWidth} ${canvas.offsetHeight}`);
+  svg.style.height = canvas.offsetHeight + 'px';
+
+  const dev      = rel(document.getElementById('b-dev'));
+  const gh       = rel(document.getElementById('b-gh'));
+  const pages    = rel(document.getElementById('b-pages'));
+  const firebase = rel(document.getElementById('b-firebase'));
+  const store    = rel(document.getElementById('b-store'));
+  const desk     = rel(document.getElementById('b-desk'));
+
+  function arrow(x1,y1,x2,y2,cls,marker,label,labelX,labelY){
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',`M${x1},${y1} L${x2},${y2}`);
+    path.setAttribute('class','arrow-line '+cls);
+    path.setAttribute('marker-end',`url(#${marker})`);
+    svg.appendChild(path);
+    if(label){
+      const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', labelX); t.setAttribute('y', labelY);
+      t.setAttribute('class','arrow-label'); t.textContent = label;
+      svg.appendChild(bg); svg.appendChild(t);
+      requestAnimationFrame(()=>{
+        const tb = t.getBBox();
+        bg.setAttribute('x', tb.x-4); bg.setAttribute('y', tb.y-2);
+        bg.setAttribute('width', tb.width+8); bg.setAttribute('height', tb.height+4);
+        bg.setAttribute('rx',3); bg.setAttribute('fill','#f0f4f8');
+      });
+    }
+  }
+
+  function curve(x1,y1,cx1,cy1,cx2,cy2,x2,y2,cls,marker,label,lx,ly){
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',`M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`);
+    path.setAttribute('class','arrow-line '+cls);
+    path.setAttribute('marker-end',`url(#${marker})`);
+    svg.appendChild(path);
+    if(label){
+      const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',lx); t.setAttribute('y',ly);
+      t.setAttribute('class','arrow-label'); t.textContent=label;
+      svg.appendChild(bg); svg.appendChild(t);
+      requestAnimationFrame(()=>{
+        const tb=t.getBBox();
+        bg.setAttribute('x',tb.x-4); bg.setAttribute('y',tb.y-2);
+        bg.setAttribute('width',tb.width+8); bg.setAttribute('height',tb.height+4);
+        bg.setAttribute('rx',3); bg.setAttribute('fill','#f0f4f8');
+      });
+    }
+  }
+
+  // ① Dev → GitHub
+  arrow(dev.right, dev.cy, gh.left-9, gh.cy, 'cl-blue', 'arr-blue', '① git push', (dev.right+gh.left)/2, dev.cy - 10);
+
+  // ② GitHub → Pages
+  arrow(gh.right, gh.cy, pages.left-9, pages.cy, 'cl-dark', 'arr', '② auto-deploy (~2–5 min)', (gh.right+pages.left)/2, gh.cy - 10);
+
+  // ③ Pages → Browser
+  curve(pages.cx, pages.bottom, pages.cx, pages.bottom+40, desk.cx+30, desk.top-40, desk.cx+30, desk.top-9,
+    'cl-yellow', 'arr-yellow', '③ serve index.html', desk.cx + 100, desk.top - 55);
+
+  // ④ Firebase → Browser (read on load)
+  curve(firebase.cx, firebase.bottom, firebase.cx, firebase.bottom+30, desk.cx+60, desk.top-30, desk.cx+60, desk.top-9,
+    'cl-orange', 'arr-orange', '④ read on load', firebase.cx - 30, firebase.bottom + 55);
+
+  // ⑤ Browser → Firebase (write on save, dashed)
+  curve(desk.cx+20, desk.top-9, desk.cx+20, desk.top-30, firebase.cx-20, firebase.bottom+30, firebase.cx-20, firebase.bottom,
+    'cl-orange cl-dashed', 'arr-orange', '⑤ write on save', firebase.cx - 100, firebase.bottom + 30);
+
+  // ⑥ Browser ↔ localStorage (fallback)
+  curve(desk.right, desk.cy-10, desk.right+40, desk.cy-10, store.left-40, store.cy-10, store.left-9, store.cy-10,
+    'cl-purple', 'arr-purple', '⑥ fallback read/write', (desk.right+store.left)/2, desk.cy - 24);
+
+  // localStorage → Browser (reverse, dashed)
+  curve(store.left-9, store.cy+10, store.left-40, store.cy+10, desk.right+40, desk.cy+10, desk.right, desk.cy+10,
+    'cl-purple cl-dashed', 'arr-purple', '', 0, 0);
+});
+</script>
+
+<p class="footer">Diabetic Records Tracker &nbsp;·&nbsp; Personal Health Dashboard &nbsp;·&nbsp; Architecture v1.0 &nbsp;·&nbsp; May 2026</p>
+
+</body>
+</html>
