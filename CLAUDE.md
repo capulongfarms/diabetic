@@ -41,6 +41,16 @@ _sel  = { reading:null, test:null, wifesum:null, wifev:null }  // selected row I
 
 Each array maps to a Firestore sub-collection under `users/{FIXED_UID}/{name}`. The fixed UID (`64oGBkwTKJOfCpGUW10eTrLdMgJ2`) means this is a single-user app.
 
+**Other global state:**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `_readPage` | `1` | Current page in the readings table |
+| `PAGE_SIZE` | `50` | Rows per page (constant) |
+| `_sortField` | `'date'` | Active sort column |
+| `_sortAsc` | `false` | Sort direction (false = newest-first) |
+| `_charts` | `{}` | Live Chart.js instances keyed by canvas ID; each is `.destroy()`ed before re-render |
+
 **Reading record schema** (fields saved by `saveReading`):
 
 | Field | Type | Notes |
@@ -91,8 +101,8 @@ Eight panels are toggled by showing/hiding `<section id="dash-*">` elements. Laz
 Defined in the `_SEC` constants object:
 
 - **PIN storage:** SHA-256(`pin + '_diabetic_salt'`) stored in localStorage key `sec_pin_h`.
-- **Brute-force protection:** 5 failed attempts → 60-second lockout (stored in `sec_lock`).
-- **Perpetual PIN mode:** `SESSION_TTL = 0`, so every guarded action requires a PIN re-entry regardless of recency.
+- **Brute-force protection:** 5 failed attempts → 60-second lockout; lockout state in `sec_lock`, attempt counter in `sec_attempts` (both localStorage).
+- **Perpetual PIN mode:** `SESSION_TTL = 0`, so every guarded action requires a PIN re-entry regardless of recency. Session token is written to `sec_sess` in sessionStorage but expires immediately.
 - **Guarded operations:** All write operations are wrapped in `_guardedAsync()`, which pops the `modal-pin-prompt` dialog and resolves only on correct PIN.
 
 ### Modals
@@ -121,4 +131,5 @@ Stored in `localStorage` under the key `prefs`. Contains user/spouse names, gluc
 - **Toast notifications** — `toast(message, type)` for all user feedback (`type` is `'success'`, `'error'`, or `'info'`).
 - **Button debounce** — save buttons are disabled immediately on click and re-enabled in a `finally` block to prevent double-submits.
 - **Firebase config** is hardcoded in the script; this is intentional for this private single-user app.
+- **Excel export** — `exportAllExcel()` writes all four collections to a single `.xlsx` file with separate sheets via SheetJS, compatible with the companion Python app format.
 - **Data files** in `/Files/` are manual backups and exports — not used at runtime.
