@@ -492,7 +492,7 @@ main{flex:1;overflow:hidden;}
           Firebase is hardcoded and active. Connection credentials are embedded in the app and not displayed here for security.
         </p>
         <div class="kv-row"><span class="k">Project</span><span class="v" style="color:var(--accent2)">diabetic-records ✅</span></div>
-        <div class="kv-row"><span class="k">Storage</span><span class="v" id="info-storage">Firebase Firestore</span></div>
+        <div class="kv-row"><span class="k">Storage</span><span class="v">Firebase Firestore</span></div>
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" onclick="testFirebaseConnection()">🔌 Test Connection</button>
         </div>
@@ -806,6 +806,7 @@ const _data = { readings:[], tests:[], wifesum:[], wifev:[] };
 const _sel  = { reading:null, test:null, wifesum:null, wifev:null };
 let _readPage = 1;
 const PAGE_SIZE = 50;
+let _fbWarnedOffline = false;
 let _sortField = 'date', _sortAsc = false;
 const _charts = {};
 
@@ -817,6 +818,11 @@ const $ = id => document.getElementById(id);
 // ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
   applyFont(_fs); // apply saved font size once DOM is ready
+  if (!navigator.onLine) {
+    toast('You are offline — data will load from local cache only', 'error');
+  }
+  window.addEventListener('offline', () => toast('Connection lost — changes are writing to local cache only', 'error'));
+  window.addEventListener('online',  () => toast('Back online — reload the page to sync from Firebase', 'info'));
   try {
     const app = initializeApp(FIREBASE_CONFIG);
     _db = getFirestore(app);
@@ -832,6 +838,7 @@ async function init() {
   loadPrefs();
   await loadAllData();
   renderSummary();
+  _applySecurityGuards();
 }
 window.addEventListener('load', init);
 
@@ -885,8 +892,17 @@ async function dbAll(name) {
     try {
       const s = await getDocs(colRef(name));
       return s.docs.map(d => ({ ...d.data(), id: d.id }));
-    } catch { return []; }
+    } catch(e) {
+      console.warn(`Firebase read failed for '${name}', falling back to localStorage:`, e);
+      if (!_fbWarnedOffline) {
+        _fbWarnedOffline = true;
+        $('info-storage').textContent = 'localStorage (Firebase unavailable)';
+        toast('Firebase unavailable — showing locally cached data', 'error');
+      }
+      return lsGet(lkey(name)) || [];
+    }
   }
+  $('info-storage').textContent = 'localStorage (offline mode)';
   return lsGet(lkey(name)) || [];
 }
 
@@ -1852,11 +1868,13 @@ function _requireAuth(actionName, callback) {
 }
 
 // ── PIN PROMPT MODAL ──────────────────────────────────────────────────────────
-let _pendingAction = null;
-let _lockTimer     = null;
+let _pendingAction      = null;
+let _pendingActionLabel = null;
+let _lockTimer          = null;
 
 window._showPinPrompt = function(actionName, callback) {
-  _pendingAction = callback || null;
+  _pendingAction      = callback || null;
+  _pendingActionLabel = actionName || null;
 
   // Check lock first
   const lock = _isLocked();
@@ -1920,15 +1938,19 @@ window.submitPinPrompt = async function() {
   const lock = _isLocked();
   if (lock) { _showLockMessage(lock.until); return; }
 
-  // If no PIN set yet — remind user to set one, allow through once
+  // No PIN set — only allow opening the Change PIN modal; block everything else
   if (!_hasPinSet()) {
     _clearAttempts();
     closeModal('modal-pin-prompt');
-    toast('No PIN set — please set one in ⚙️ Settings → Change Admin PIN', 'info');
-    if (_pendingAction) {
-      const action = _pendingAction;
-      _pendingAction = null;
-      action();
+    const label = _pendingActionLabel;
+    const action = _pendingAction;
+    _pendingAction      = null;
+    _pendingActionLabel = null;
+    if (label === 'Change Admin PIN') {
+      if (action) action();
+    } else {
+      toast('No admin PIN set — please set one in ⚙️ Settings before making changes', 'error');
+      showDash('settings');
     }
     return;
   }
@@ -1941,7 +1963,8 @@ window.submitPinPrompt = async function() {
     $('pin-prompt-input').value = '';
     if (_pendingAction) {
       const action = _pendingAction;
-      _pendingAction = null;
+      _pendingAction      = null;
+      _pendingActionLabel = null;
       action(); // execute guarded action after PIN verified
     }
   } else {
@@ -1965,14 +1988,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── GUARDED FUNCTION WRAPPER ─────────────────────────────────────────────────
-// Wraps any function to require PIN auth before executing
-function _guarded(actionLabel, fn) {
-  return function(...args) {
-    if (_requireAuth(actionLabel)) {
-      fn.apply(this, args);
-    }
-  };
-}
 function _guardedAsync(actionLabel, fn) {
   return function(...args) {
     // Perpetual PIN — always prompt, never skip
@@ -2088,13 +2103,7 @@ function _applySecurityGuards() {
   console.log(`[Security] ${WRITE_ACTIONS.length} functions guarded`);
 }
 
-// Auto-init session from sessionStorage (page refresh stay-logged-in)
-// and apply guards after all functions defined
 window.addEventListener('load', () => {
-  // Apply guards after init() has defined all window.* functions
-  setTimeout(_applySecurityGuards, 500);
-
-  // Show session status in settings
   const infoEl = $('info-session');
   if (infoEl) {
     infoEl.textContent = '🔒 Perpetual PIN — required for every action';
