@@ -11,11 +11,12 @@ A personal health records dashboard for managing diabetic and medical data, with
 - **Diet Analysis** — Rank meals by glucose impact with best/worst lists
 - **Spouse Tracking** — Separate treatment periods and visit records
 - **Data Export** — CSV and full Excel workbook export; JSON backup/restore
-- **PIN Protection** — SHA-256 hashed 6-digit PIN with brute-force lockout
+- **PIN Protection** — SHA-256 hashed PIN (min 4 digits) required on every write; 5 failed attempts triggers a 60-second lockout
+- **Offline Support** — detects when offline on load and falls back to locally cached data automatically
 
 ## Storage
 
-Uses Firebase Firestore as primary storage, with automatic fallback to browser localStorage. All data stays private — no accounts, no third-party access beyond Firebase.
+Uses Firebase Firestore as primary storage. If Firebase is unreachable (offline or network error), the app falls back to browser localStorage and shows a warning — data is never lost. Firestore Security Rules lock access to the single fixed-user path; all other paths are denied. All data stays private — no accounts, no third-party access beyond Firebase.
 
 ## Usage
 

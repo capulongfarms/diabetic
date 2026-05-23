@@ -28,7 +28,13 @@ All application code is in `index.html` — styles, markup, and a large `<script
 
 ### Startup flow
 
-`init()` runs on `window.load`. It initializes Firebase, hides the auth screen immediately (no login gate), calls `loadAllData()`, then `renderSummary()`. The auth screen HTML remains in the DOM but is never shown in the current version — the PIN pad is only used for write-guarding, not login.
+`init()` runs on `window.load` in this order:
+1. Checks `navigator.onLine` — toasts an error if offline; registers `online`/`offline` event listeners.
+2. Initializes Firebase (`initializeApp` + `getFirestore`) — sets `_db`. These are synchronous and always succeed.
+3. Hides the auth screen, shows the app shell immediately (no login gate).
+4. Calls `loadAllData()` — fetches all 4 collections in parallel via `dbAll()`. Firebase is always tried first; if `getDocs` throws (offline / rules error), `dbAll` falls back to localStorage and toasts a warning. The `info-storage` status indicator is updated accordingly.
+5. Calls `renderSummary()`.
+6. Calls `_applySecurityGuards()` — wraps all `window.*` write functions with `_guardedAsync()`. Guards are applied here (end of init) to eliminate any race window.
 
 ### Core data model
 
@@ -79,7 +85,9 @@ Four database primitives handle all persistence:
 | `dbSet(name, id, data)` | Update an existing doc |
 | `dbDel(name, id)` | Delete a doc |
 
-Each function tries Firebase first, falls back to localStorage automatically. localStorage keys follow the pattern `data_{FIXED_UID}_{name}`.
+Priority: Firebase always tried first. `dbAll` falls back to localStorage only when `getDocs` throws (network error, rules rejection, etc.) — not on every load. `dbAdd`/`dbSet`/`dbDel` fall back to localStorage when `_db` is null (Firebase SDK failed to init — extremely rare). localStorage keys follow the pattern `data_{FIXED_UID}_{name}`.
+
+`_fbWarnedOffline` flag (module-level boolean) ensures the offline toast and storage indicator update fire only once per session even though `dbAll` is called 4 times in parallel.
 
 ### Dashboard panels
 
@@ -103,7 +111,9 @@ Defined in the `_SEC` constants object:
 - **PIN storage:** SHA-256(`pin + '_diabetic_salt'`) stored in localStorage key `sec_pin_h`.
 - **Brute-force protection:** 5 failed attempts → 60-second lockout; lockout state in `sec_lock`, attempt counter in `sec_attempts` (both localStorage).
 - **Perpetual PIN mode:** `SESSION_TTL = 0`, so every guarded action requires a PIN re-entry regardless of recency. Session token is written to `sec_sess` in sessionStorage but expires immediately.
-- **Guarded operations:** All write operations are wrapped in `_guardedAsync()`, which pops the `modal-pin-prompt` dialog and resolves only on correct PIN.
+- **Guarded operations:** All write operations are wrapped in `_guardedAsync()`, which pops the `modal-pin-prompt` dialog and resolves only on correct PIN. Guards are applied once at the end of `init()` via `_applySecurityGuards()`.
+- **No-PIN-set behavior:** If `sec_pin_h` is missing (first use or localStorage cleared), only the "Change Admin PIN" action is allowed through. All other writes are blocked and the user is redirected to Settings. This closes the PIN-deletion bypass.
+- **`_pendingActionLabel`:** Stored alongside `_pendingAction` in `_showPinPrompt` so `submitPinPrompt` can identify which action is pending and apply the no-PIN-set rule correctly.
 
 ### Modals
 
@@ -119,6 +129,17 @@ Six `<dialog>`-like overlay elements (CSS class `.modal-overlay`):
 | `modal-pin-prompt` | PIN re-entry guard for writes |
 
 Open with `openModal(id)`, close with `closeModal(id)`.
+
+### Firestore Security Rules
+
+Defined in `firestore.rules` (deployed via Firebase Console). Locks Firestore access to the single fixed-UID path; all other paths return `permission-denied`:
+
+```js
+match /users/64oGBkwTKJOfCpGUW10eTrLdMgJ2/{document=**} { allow read, write: if true; }
+match /{document=**} { allow read, write: if false; }
+```
+
+`firebase.json` points to `firestore.rules` for CLI deployment if needed (`firebase deploy --only firestore:rules --project diabetic-records`).
 
 ### Preferences
 

@@ -438,7 +438,7 @@
       <div class="flow-num bg-yellow">③</div>
       <div class="flow-text">
         <strong>GitHub Pages → Browser &nbsp;(page load)</strong>
-        When the owner opens the URL, GitHub Pages serves the single <code>index.html</code> file (with all embedded CSS and JavaScript) over HTTPS. PIN login is required before data is shown.
+        When the owner opens the URL, GitHub Pages serves the single <code>index.html</code> file (with all embedded CSS and JavaScript) over HTTPS. The app loads immediately — no login gate. PIN is required only for write operations.
       </div>
     </div>
 
@@ -446,7 +446,7 @@
       <div class="flow-num bg-orange">④</div>
       <div class="flow-text">
         <strong>Firestore → Browser &nbsp;(read on startup)</strong>
-        After PIN login, <code>dbAll(name)</code> fetches all docs from 4 collections in parallel: <code>readings</code>, <code>tests</code>, <code>wifesum</code>, and <code>wifev</code>. This is the live data. If Firestore is unreachable, the app falls back to localStorage automatically.
+        On startup, <code>dbAll(name)</code> fetches all docs from 4 collections in parallel: <code>readings</code>, <code>tests</code>, <code>wifesum</code>, and <code>wifev</code>. Firestore is always tried first. If unreachable, the app falls back to localStorage automatically and shows a warning toast. The storage indicator updates to reflect which source is active.
       </div>
     </div>
 
@@ -485,24 +485,24 @@
         <div class="step-text">Browser downloads <code>index.html</code> from GitHub Pages CDN (includes all CSS, JS, and Chart.js / XLSX loaded from CDN)</div>
       </div>
       <div class="step">
-        <div class="step-dot bg-red">2</div>
-        <div class="step-text">PIN login screen appears — SHA-256 hash of entered PIN is compared against stored hash. 3 wrong attempts → 30-second lockout.</div>
+        <div class="step-dot bg-orange">2</div>
+        <div class="step-text">Offline check — if <code>navigator.onLine</code> is false, a warning toast appears. Online/offline event listeners registered.</div>
       </div>
       <div class="step">
-        <div class="step-dot bg-green">3</div>
-        <div class="step-text">PIN matches → session token written to <code>sessionStorage</code>. App shell loads.</div>
+        <div class="step-dot bg-orange">3</div>
+        <div class="step-text"><code>dbAll()</code> runs for all 4 collections — <code>readings</code>, <code>tests</code>, <code>wifesum</code>, <code>wifev</code> — fetched from Firestore in parallel. App shell shows immediately.</div>
       </div>
       <div class="step">
-        <div class="step-dot bg-orange">4</div>
-        <div class="step-text"><code>dbAll()</code> runs for all 4 collections — <code>readings</code>, <code>tests</code>, <code>wifesum</code>, <code>wifev</code> — fetched from Firestore in parallel.</div>
+        <div class="step-dot bg-purple">4</div>
+        <div class="step-text"><strong>Firestore offline:</strong> falls back to localStorage copies and shows a "Firebase unavailable" toast. Storage indicator updates. App still fully functional with last known data.</div>
       </div>
       <div class="step">
-        <div class="step-dot bg-purple">5</div>
-        <div class="step-text"><strong>Firestore offline:</strong> falls back to localStorage copies. App still fully functional with last known data.</div>
+        <div class="step-dot bg-red">5</div>
+        <div class="step-text">Security guards applied via <code>_applySecurityGuards()</code> — all write functions wrapped with PIN requirement. No race window.</div>
       </div>
       <div class="step">
         <div class="step-dot bg-green">6</div>
-        <div class="step-text"><strong>Dashboard fully loads</strong> — Summary panel renders stats and 30-day trend chart. All 8 panels become navigable.</div>
+        <div class="step-text"><strong>Dashboard fully loads</strong> — Summary panel renders stats and 30-day trend chart. All 8 panels navigable. PIN required for every write.</div>
       </div>
     </div>
 
@@ -591,7 +591,7 @@
   <div class="fact red">
     <div class="fact-label">Security</div>
     <div class="fact-value">SHA-256 PIN</div>
-    <div class="fact-sub">6-digit PIN · brute-force lockout · every write is guarded</div>
+    <div class="fact-sub">Min 4-digit PIN · 5 attempts → 60s lockout · every write guarded · Firestore rules locked to fixed UID</div>
   </div>
   <div class="fact green">
     <div class="fact-label">Monthly Cost</div>
@@ -688,48 +688,48 @@
         <td>Daily Readings</td>
         <td><code>users/{UID}/readings</code></td>
         <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
-        <td><code>diab_readings</code></td>
+        <td><code>data_{UID}_readings</code></td>
         <td>One doc per reading entry. Fields: date, glucose (mmol/L), systolic, diastolic, weight (kg), meal description, medications, notes.</td>
       </tr>
       <tr>
         <td>Lab Tests</td>
         <td><code>users/{UID}/tests</code></td>
         <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
-        <td><code>diab_tests</code></td>
+        <td><code>data_{UID}_tests</code></td>
         <td>One doc per test session. Each session contains an array of criteria results (e.g. HbA1c, cholesterol, creatinine). Session date and lab name stored at the doc level.</td>
       </tr>
       <tr>
         <td>Spouse Treatment Periods</td>
         <td><code>users/{UID}/wifesum</code></td>
         <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
-        <td><code>diab_wifesum</code></td>
+        <td><code>data_{UID}_wifesum</code></td>
         <td>One doc per treatment period. Tracks condition, medication, dosage, and date range for the spouse/secondary tracked person.</td>
       </tr>
       <tr>
         <td>Spouse Visit Records</td>
         <td><code>users/{UID}/wifev</code></td>
         <td><code>dbAdd()</code> / <code>dbSet()</code> / <code>dbDel()</code></td>
-        <td><code>diab_wifev</code></td>
+        <td><code>data_{UID}_wifev</code></td>
         <td>One doc per medical visit. Stores visit date, doctor, clinic, findings, and next appointment.</td>
       </tr>
       <tr>
         <td>PIN &amp; Preferences</td>
         <td>Not synced to Firestore</td>
         <td>Settings panel</td>
-        <td><code>prefs</code>, <code>diab_pin</code></td>
-        <td>Device-local only. <code>prefs</code> stores names, glucose thresholds (high/low mmol/L), BP thresholds (systolic/diastolic). <code>diab_pin</code> stores the SHA-256 PIN hash.</td>
+        <td><code>prefs</code>, <code>sec_pin_h</code></td>
+        <td>Device-local only. <code>prefs</code> stores names, glucose thresholds (high/low mmol/L), BP thresholds (systolic/diastolic). <code>sec_pin_h</code> stores the SHA-256 PIN hash. <code>sec_lock</code> and <code>sec_attempts</code> store brute-force state.</td>
       </tr>
       <tr>
-        <td>Firebase Config Override</td>
-        <td>Not in Firestore</td>
-        <td>Settings panel</td>
-        <td><code>diab_firebase_config</code></td>
-        <td>Optional per-device override of the hardcoded Firebase config. Useful if migrating to a different Firebase project.</td>
+        <td>Firestore Security Rules</td>
+        <td>Not a collection — Firebase-side rule</td>
+        <td><code>firestore.rules</code> (deployed via Firebase Console)</td>
+        <td>N/A</td>
+        <td>Locks Firestore access to <code>users/64oGBkwTKJOfCpGUW10eTrLdMgJ2/*</code> only. All other paths return <code>permission-denied</code>.</td>
       </tr>
     </tbody>
   </table>
   <div style="margin-top:14px;padding:12px 16px;background:#fff3e0;border-left:4px solid #f57c00;border-radius:8px;font-size:0.82rem;color:#bf360c;line-height:1.6;">
-    <strong>Important:</strong> Firestore is the primary store. The fixed user UID (<code>64oGBkwTKJOfCpGUW10eTrLdMgJ2</code>) means all data is scoped to a single owner — this is by design for a private personal health app. localStorage is the fallback, not a cache: it is only read when Firestore is unreachable, not on every page load.
+    <strong>Important:</strong> Firestore is the single source of truth. The fixed user UID (<code>64oGBkwTKJOfCpGUW10eTrLdMgJ2</code>) scopes all data to a single owner — this is by design for a private personal health app. localStorage is the fallback: <code>dbAll()</code> reads from it only when a Firestore <code>getDocs()</code> call throws (offline or rules error). When this happens, a toast warns the user and the storage indicator updates to "localStorage (Firebase unavailable)". Firestore Security Rules lock the database path so no other user can read or write the data.
   </div>
 </div>
 
@@ -739,13 +739,13 @@
      ══════════════════════════════════════════════ -->
 <div class="sequence" style="margin-top:24px;">
   <h2>PIN Access Control — What Requires a PIN</h2>
-  <p style="font-size:0.83rem;color:#5a7080;margin-bottom:18px;margin-top:6px;">Viewing data requires only a valid session (PIN entered on page load). Every write operation — add, edit, delete, import, export, backup, restore — re-prompts for the PIN via <code>_guardedAsync()</code>. This prevents accidental or unauthorized changes even if the browser is left open.</p>
+  <p style="font-size:0.83rem;color:#5a7080;margin-bottom:18px;margin-top:6px;">The app loads with no login gate — all data is immediately visible. Every write operation — add, edit, delete, import, export, backup, restore — re-prompts for the PIN via <code>_guardedAsync()</code> (<code>SESSION_TTL = 0</code>, perpetual mode). This prevents accidental or unauthorized changes even if the browser is left open.</p>
 
   <div style="display:flex;gap:20px;flex-wrap:wrap;">
 
     <div style="flex:1;min-width:280px;">
       <div style="background:#f0fdf4;border:2px solid #43a047;border-radius:12px;padding:18px 20px;">
-        <h3 style="font-size:0.82rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#1b5e20;margin-bottom:14px;">PIN on login only — read operations</h3>
+        <h3 style="font-size:0.82rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#1b5e20;margin-bottom:14px;">No PIN required — read / view operations</h3>
         <div class="comp-row"><span class="comp-icon">📊</span><span>View Summary stats and glucose trend chart</span></div>
         <div class="comp-row"><span class="comp-icon">📋</span><span>Browse, search, and filter readings table</span></div>
         <div class="comp-row"><span class="comp-icon">📈</span><span>View all chart visualizations (glucose, BP, weight)</span></div>
@@ -774,7 +774,7 @@
   </div>
 
   <div style="margin-top:14px;padding:12px 16px;background:#e8f0fe;border-left:4px solid #4a80d4;border-radius:8px;font-size:0.82rem;color:#1a3a8a;line-height:1.6;">
-    <strong>How the PIN session works:</strong> On successful login, a session token is written to <code>sessionStorage</code>. This survives page refreshes within the same browser tab but is cleared when the tab is closed — so the owner must re-enter the PIN on each new browser session. For individual write operations, <code>_guardedAsync(fn)</code> wraps the action: it shows the PIN modal, verifies the hash, then calls <code>fn()</code> only on success. Brute-force protection applies to both the login screen and mid-session PIN prompts: 3 wrong attempts → 30-second lockout.
+    <strong>How the PIN model works:</strong> There is no login gate — the app loads immediately. Every write operation is individually PIN-guarded via <code>_guardedAsync(fn)</code>: it shows the PIN modal, verifies the SHA-256 hash, then calls <code>fn()</code> only on success (<code>SESSION_TTL = 0</code> — perpetual PIN mode, no session caching). If no PIN is set, only "Change Admin PIN" is allowed through; all other writes are blocked and redirect to Settings. Brute-force protection: 5 wrong attempts → 60-second lockout.
   </div>
 </div>
 
@@ -880,7 +880,7 @@ window.addEventListener('load', () => {
 });
 </script>
 
-<p class="footer">Diabetic Records Tracker &nbsp;·&nbsp; Personal Health Dashboard &nbsp;·&nbsp; Architecture v1.0 &nbsp;·&nbsp; May 2026</p>
+<p class="footer">Diabetic Records Tracker &nbsp;·&nbsp; Personal Health Dashboard &nbsp;·&nbsp; Architecture v1.1 &nbsp;·&nbsp; May 2026</p>
 
 </body>
 </html>
