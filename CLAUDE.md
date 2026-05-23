@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Single-file personal health records dashboard for a diabetic patient and spouse. Hosted on GitHub Pages at [polcapulong-capulongfarms/diabetic](https://github.com/polcapulong-capulongfarms/diabetic). Built with vanilla HTML/JS and Firebase Firestore (with localStorage fallback). No build system — everything lives in `index.html`.
+Single-file personal health records dashboard for a diabetic patient and spouse. Hosted on GitHub Pages at [capulongfarms/diabetic](https://github.com/capulongfarms/diabetic). Built with vanilla HTML/JS and Firebase Firestore (with localStorage fallback). No build system — everything lives in `index.html`.
 
 ## Running the App
 
