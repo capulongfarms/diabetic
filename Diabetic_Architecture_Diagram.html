@@ -453,16 +453,16 @@
     <div class="flow-item">
       <div class="flow-num bg-orange">⑤</div>
       <div class="flow-text">
-        <strong>Browser → Firestore &nbsp;(write on every change)</strong>
-        When the owner adds, edits, or deletes a record, <code>dbAdd()</code>, <code>dbSet()</code>, or <code>dbDel()</code> writes to Firestore. All write operations require PIN re-entry via <code>_guardedAsync()</code>. Firestore is the single source of truth.
+        <strong>Browser → localStorage + Firestore &nbsp;(write-through on every change)</strong>
+        When the owner adds, edits, or deletes a record, the local cache is always written first, then Firestore. All write operations require PIN re-entry via <code>_guardedAsync()</code>. If Firestore is unavailable, the record is safe in localStorage and the user is notified. Firestore is the single source of truth.
       </div>
     </div>
 
     <div class="flow-item">
       <div class="flow-num bg-purple">⑥</div>
       <div class="flow-text">
-        <strong>Browser ↔ localStorage &nbsp;(fallback)</strong>
-        localStorage stores the PIN hash, user preferences (names, glucose/BP thresholds, font size), and a Firebase config override. If Firestore is unreachable, all 4 collections fall back to localStorage automatically using the same read/write functions.
+        <strong>Browser ↔ localStorage &nbsp;(write-through cache + prefs)</strong>
+        localStorage is kept in sync at all times — not used as a last resort. Every successful Firebase read syncs the result to localStorage. Every write goes to localStorage first. It also stores the PIN hash and user preferences (names, glucose/BP thresholds, font size). If Firestore is unreachable, the app reads from this always-current local cache.
       </div>
     </div>
 
@@ -518,12 +518,12 @@
         <div class="step-text">On submit, <code>_guardedAsync()</code> intercepts — PIN modal appears to re-verify identity before any write proceeds</div>
       </div>
       <div class="step">
-        <div class="step-dot bg-orange">3</div>
-        <div class="step-text">PIN confirmed → <code>dbAdd()</code> or <code>dbSet()</code> writes the record to Firestore</div>
+        <div class="step-dot bg-purple">3</div>
+        <div class="step-text">PIN confirmed → record written to <strong>localStorage first</strong> (instant, always succeeds)</div>
       </div>
       <div class="step">
-        <div class="step-dot bg-purple">4</div>
-        <div class="step-text">If Firestore write fails, the same function writes to localStorage instead — data is never lost</div>
+        <div class="step-dot bg-orange">4</div>
+        <div class="step-text">Firestore write attempted — if it succeeds, both storages are in sync. If it fails, data is already safe in localStorage and a toast notifies the user.</div>
       </div>
       <div class="step">
         <div class="step-dot bg-green">5</div>
@@ -581,7 +581,7 @@
   <div class="fact orange">
     <div class="fact-label">Database</div>
     <div class="fact-value">Firebase Firestore</div>
-    <div class="fact-sub">4 collections · single fixed user · localStorage as fallback</div>
+    <div class="fact-sub">4 collections · single fixed user · write-through localStorage cache</div>
   </div>
   <div class="fact purple">
     <div class="fact-label">Auth &amp; Prefs</div>
@@ -679,7 +679,7 @@
         <th>Collection</th>
         <th>Firestore Path</th>
         <th>Written by</th>
-        <th>localStorage Fallback Key</th>
+        <th>localStorage Cache Key</th>
         <th>Notes</th>
       </tr>
     </thead>
@@ -729,7 +729,7 @@
     </tbody>
   </table>
   <div style="margin-top:14px;padding:12px 16px;background:#fff3e0;border-left:4px solid #f57c00;border-radius:8px;font-size:0.82rem;color:#bf360c;line-height:1.6;">
-    <strong>Important:</strong> Firestore is the single source of truth. The fixed user UID (<code>64oGBkwTKJOfCpGUW10eTrLdMgJ2</code>) scopes all data to a single owner — this is by design for a private personal health app. localStorage is the fallback: <code>dbAll()</code> reads from it only when a Firestore <code>getDocs()</code> call throws (offline or rules error). When this happens, a toast warns the user and the storage indicator updates to "localStorage (Firebase unavailable)". Firestore Security Rules lock the database path so no other user can read or write the data.
+    <strong>Important:</strong> Firestore is the single source of truth. The fixed user UID (<code>64oGBkwTKJOfCpGUW10eTrLdMgJ2</code>) scopes all data to a single owner — this is by design for a private personal health app. localStorage is a <strong>write-through cache</strong> — always kept in sync, not a last resort. Every successful Firebase read syncs to localStorage; every write goes to localStorage first then Firebase. If Firebase is unreachable, the app reads from this always-current local cache and a toast warns the user. Firestore Security Rules lock the database path so no other user can read or write the data.
   </div>
 </div>
 
@@ -880,7 +880,7 @@ window.addEventListener('load', () => {
 });
 </script>
 
-<p class="footer">Diabetic Records Tracker &nbsp;·&nbsp; Personal Health Dashboard &nbsp;·&nbsp; Architecture v1.1 &nbsp;·&nbsp; May 2026</p>
+<p class="footer">Diabetic Records Tracker &nbsp;·&nbsp; Personal Health Dashboard &nbsp;·&nbsp; Architecture v1.2 &nbsp;·&nbsp; May 2026</p>
 
 </body>
 </html>

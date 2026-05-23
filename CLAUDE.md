@@ -78,16 +78,19 @@ Duplicate detection: same `date + timeOfReading` combination triggers a `confirm
 
 Four database primitives handle all persistence:
 
-| Function | Purpose |
+| Function | Behavior |
 |---|---|
-| `dbAll(name)` | Fetch all docs from a collection |
-| `dbAdd(name, data)` | Add a new doc |
-| `dbSet(name, id, data)` | Update an existing doc |
-| `dbDel(name, id)` | Delete a doc |
+| `dbAll(name)` | Tries Firebase first. On success, **writes result to localStorage** (keeps cache fresh). On failure, falls back to localStorage and shows a warning toast. |
+| `dbAdd(name, data)` | Always writes to localStorage first. Then tries Firebase; on failure, toasts user and returns the local ID — data is never lost. |
+| `dbSet(name, id, data)` | Always writes to localStorage first. Then tries Firebase `setDoc`; toasts on failure. |
+| `dbDel(name, id)` | Always removes from localStorage first. Then tries Firebase `deleteDoc`; toasts on failure. |
 
-Priority: Firebase always tried first. `dbAll` falls back to localStorage only when `getDocs` throws (network error, rules rejection, etc.) — not on every load. `dbAdd`/`dbSet`/`dbDel` fall back to localStorage when `_db` is null (Firebase SDK failed to init — extremely rare). localStorage keys follow the pattern `data_{FIXED_UID}_{name}`.
+This is a **write-through cache** pattern: localStorage is always kept in sync with Firebase, not used as a last resort. The result is that:
+- Going offline after a load shows the **current** Firebase state, not stale old data.
+- No write is ever silently lost — if Firebase is unavailable, the record lands in localStorage.
+- All four collections always have a warm local cache for instant offline access.
 
-`_fbWarnedOffline` flag (module-level boolean) ensures the offline toast and storage indicator update fire only once per session even though `dbAll` is called 4 times in parallel.
+localStorage keys follow the pattern `data_{FIXED_UID}_{name}`. `_fbWarnedOffline` (module-level boolean) ensures the offline toast and storage indicator update fire only once per session even though `dbAll` is called 4 times in parallel.
 
 ### Dashboard panels
 

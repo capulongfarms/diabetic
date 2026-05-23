@@ -16,7 +16,7 @@ A personal health records dashboard for managing diabetic and medical data, with
 
 ## Storage
 
-Uses Firebase Firestore as primary storage. If Firebase is unreachable (offline or network error), the app falls back to browser localStorage and shows a warning — data is never lost. Firestore Security Rules lock access to the single fixed-user path; all other paths are denied. All data stays private — no accounts, no third-party access beyond Firebase.
+Uses Firebase Firestore as the single source of truth with a write-through local cache. Every successful Firebase read syncs to localStorage, and every write goes to localStorage first then Firebase — so data is never lost even when offline. If Firebase is unreachable, the app falls back to the locally cached data and shows a warning. Firestore Security Rules lock access to the single fixed-user path; all other paths are denied. All data stays private — no accounts, no third-party access beyond Firebase.
 
 ## Usage
 
