@@ -868,30 +868,54 @@ const docRef  = (name,id) => doc(_db, 'users', FIXED_UID, name, id);
 const lkey    = name => 'data_' + FIXED_UID + '_' + name;
 
 async function dbAdd(name, data) {
-  if (_db) {
-    const r = await addDoc(colRef(name), { ...data, _ts: serverTimestamp() });
-    return r.id;
-  }
   const arr = lsGet(lkey(name)) || [];
-  const id = 'l' + Date.now() + Math.random().toString(36).slice(2);
-  arr.push({ ...data, id }); lsSet(lkey(name), arr); return id;
+  const localId = 'l' + Date.now() + Math.random().toString(36).slice(2);
+  if (_db) {
+    try {
+      const r = await addDoc(colRef(name), { ...data, _ts: serverTimestamp() });
+      arr.push({ ...data, id: r.id }); lsSet(lkey(name), arr); // keep cache fresh
+      return r.id;
+    } catch(e) {
+      console.warn(`Firebase write failed for '${name}', saving to localStorage:`, e);
+      arr.push({ ...data, id: localId }); lsSet(lkey(name), arr);
+      toast('Saved locally — Firebase unavailable', 'info');
+      return localId;
+    }
+  }
+  arr.push({ ...data, id: localId }); lsSet(lkey(name), arr); return localId;
 }
 async function dbSet(name, id, data) {
-  if (_db) { await setDoc(docRef(name,id), { ...data, _ts: serverTimestamp() }); return; }
   const arr = lsGet(lkey(name)) || [];
   const i = arr.findIndex(r => r.id === id);
   if (i >= 0) arr[i] = { ...data, id }; else arr.push({ ...data, id });
-  lsSet(lkey(name), arr);
+  lsSet(lkey(name), arr); // always write locally first
+  if (_db) {
+    try {
+      await setDoc(docRef(name,id), { ...data, _ts: serverTimestamp() });
+    } catch(e) {
+      console.warn(`Firebase update failed for '${name}/${id}':`, e);
+      toast('Updated locally — Firebase unavailable', 'info');
+    }
+  }
 }
 async function dbDel(name, id) {
-  if (_db) { await deleteDoc(docRef(name,id)); return; }
-  lsSet(lkey(name), (lsGet(lkey(name)) || []).filter(r => r.id !== id));
+  lsSet(lkey(name), (lsGet(lkey(name)) || []).filter(r => r.id !== id)); // always remove locally
+  if (_db) {
+    try {
+      await deleteDoc(docRef(name,id));
+    } catch(e) {
+      console.warn(`Firebase delete failed for '${name}/${id}':`, e);
+      toast('Deleted locally — Firebase unavailable', 'info');
+    }
+  }
 }
 async function dbAll(name) {
   if (_db) {
     try {
       const s = await getDocs(colRef(name));
-      return s.docs.map(d => ({ ...d.data(), id: d.id }));
+      const docs = s.docs.map(d => ({ ...d.data(), id: d.id }));
+      lsSet(lkey(name), docs); // sync Firebase result into local cache
+      return docs;
     } catch(e) {
       console.warn(`Firebase read failed for '${name}', falling back to localStorage:`, e);
       if (!_fbWarnedOffline) {
