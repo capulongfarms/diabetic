@@ -511,11 +511,11 @@
 
       <div class="step">
         <div class="step-dot bg-green">1</div>
-        <div class="step-text">Owner opens a form — <strong>Add mode</strong> (no PIN) or <strong>Edit mode</strong> (PIN required on Edit button). The modal Save button switches dynamically between <code>save*()</code> and <code>save*Edit()</code>.</div>
+        <div class="step-text">Owner opens a form — <strong>Add mode</strong> (no PIN anywhere) or <strong>Edit mode</strong> (PIN required once, on the Edit button click via <code>editSelected*()</code>).</div>
       </div>
       <div class="step">
         <div class="step-dot bg-red">2</div>
-        <div class="step-text"><strong>Edit only:</strong> On Save, <code>_guardedAsync()</code> intercepts — PIN modal appears to re-verify identity. Add mode skips this step entirely.</div>
+        <div class="step-text"><strong>Edit only:</strong> PIN was already collected when the Edit button was clicked. The modal Save button calls the unguarded <code>save*()</code> directly — no second PIN prompt.</div>
       </div>
       <div class="step">
         <div class="step-dot bg-purple">3</div>
@@ -760,8 +760,7 @@
     <div style="flex:1;min-width:280px;">
       <div style="background:#fff5f5;border:2px solid #e53935;border-radius:12px;padding:18px 20px;">
         <h3 style="font-size:0.82rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#b71c1c;margin-bottom:14px;">PIN re-entry required — edit / delete / admin</h3>
-        <div class="comp-row"><span class="comp-icon">✏️</span><span>Open Edit modal for any existing record (PIN on Edit button)</span></div>
-        <div class="comp-row"><span class="comp-icon">💾</span><span>Save changes to an existing record (PIN on Edit-mode Save button)</span></div>
+        <div class="comp-row"><span class="comp-icon">✏️</span><span>Open Edit modal for any existing record — PIN required on the Edit button only; Save inside the modal does not prompt again</span></div>
         <div class="comp-row"><span class="comp-icon">🗑️</span><span>Delete any record</span></div>
         <div class="comp-row"><span class="comp-icon">📥</span><span>Import CSV (readings, tests, spouse visits)</span></div>
         <div class="comp-row"><span class="comp-icon">📤</span><span>Export data to CSV or Excel workbook</span></div>
@@ -775,7 +774,7 @@
   </div>
 
   <div style="margin-top:14px;padding:12px 16px;background:#e8f0fe;border-left:4px solid #4a80d4;border-radius:8px;font-size:0.82rem;color:#1a3a8a;line-height:1.6;">
-    <strong>How the PIN model works:</strong> There is no login gate — the app loads immediately. Adding new records is PIN-free: the Add modal opens freely and its Save button calls the unguarded <code>save*()</code> function. Edit mode Save calls the guarded <code>save*Edit()</code> variant; each <code>open*Modal(id)</code> dynamically switches the button's <code>onclick</code> based on whether <code>id</code> is null (add) or non-null (edit). All other destructive operations (edit, delete, import, export, backup, restore, preferences, change PIN) are individually guarded via <code>_guardedAsync(fn)</code>: it shows the PIN modal, verifies the SHA-256 hash, then calls <code>fn()</code> only on success (<code>SESSION_TTL = 0</code> — perpetual PIN mode, no session caching). If no PIN is set, only "Change Admin PIN" is allowed through; all other writes are blocked and redirect to Settings. Brute-force protection: 5 wrong attempts → 60-second lockout.
+    <strong>How the PIN model works:</strong> There is no login gate — the app loads immediately. The modal Save button is never PIN-guarded: it calls <code>save*()</code> directly in both Add and Edit mode. For Add, no PIN is needed at any step. For Edit, the PIN is collected once when the Edit button is clicked (<code>editSelected*()</code> is guarded); Save does not prompt again. All other destructive operations (delete, import, export, backup, restore, preferences, change PIN) are individually guarded via <code>_guardedAsync(fn)</code>: it shows the PIN modal, verifies the SHA-256 hash, then calls <code>fn()</code> only on success (<code>SESSION_TTL = 0</code> — perpetual PIN mode, no session caching). If no PIN is set, only "Change Admin PIN" is allowed through; all other writes are blocked and redirect to Settings. Brute-force protection: 5 wrong attempts → 60-second lockout.
   </div>
 </div>
 
