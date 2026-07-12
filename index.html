@@ -1084,13 +1084,52 @@ window.renderSummary = function() {
 window.filterReadings = function() { _readPage = 1; renderReadings(); };
 window.sortBy = function(f) {
   if (_sortField===f) _sortAsc=!_sortAsc; else { _sortField=f; _sortAsc=false; }
-  _data.readings.sort((a,b) => { const va=a[f]||'',vb=b[f]||''; return _sortAsc?va>vb?1:-1:va<vb?1:-1; });
+  const NUM = new Set(['weight','bpSys','bpDia','pulse','glucoseMgdl','glucoseMmol']);
+  // Unwrap Firestore Timestamps and plain {seconds,nanoseconds} objects to native values
+  const unwrap = v => {
+    if (v == null) return null;
+    if (typeof v === 'object') {
+      if (typeof v.toDate === 'function') return v.toDate(); // live Firestore Timestamp
+      if (v.seconds != null) return new Date(v.seconds * 1000); // JSON-parsed Timestamp
+      return null;
+    }
+    return v;
+  };
+  _data.readings.sort((a,b) => {
+    const va = unwrap(a[f]), vb = unwrap(b[f]);
+    if (f === 'date') {
+      // Parse to ms for reliable chronological order regardless of format
+      const da = va ? new Date(va).getTime() : 0;
+      const db = vb ? new Date(vb).getTime() : 0;
+      if (isNaN(da) && isNaN(db)) return 0;
+      if (isNaN(da)) return 1; if (isNaN(db)) return -1;
+      return _sortAsc ? da - db : db - da;
+    }
+    if (NUM.has(f)) {
+      const na = +va || 0, nb = +vb || 0;
+      return _sortAsc ? na - nb : nb - na;
+    }
+    const sa = va == null ? '' : String(va);
+    const sb = vb == null ? '' : String(vb);
+    if (sa === sb) return 0;
+    return _sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+  });
   renderReadings();
 };
+function _normDate(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v.slice(0,10);
+  if (v instanceof Date) return v.toISOString().slice(0,10);
+  if (typeof v === 'object') {
+    if (typeof v.toDate === 'function') return v.toDate().toISOString().slice(0,10);
+    if (v.seconds != null) return new Date(v.seconds*1000).toISOString().slice(0,10);
+  }
+  return String(v);
+}
 function renderReadings() {
   const q = ($('read-search').value||'').toLowerCase();
   const filtered = _data.readings.filter(r => !q ||
-    [r.date,r.mealType,r.dinnerMeal,r.remarks,r.medHypert,r.medDiab,r.timeOfReading].join(' ').toLowerCase().includes(q));
+    [_normDate(r.date),r.mealType,r.dinnerMeal,r.remarks,r.medHypert,r.medDiab,r.timeOfReading].join(' ').toLowerCase().includes(q));
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   _readPage = Math.min(_readPage, pages);
   const slice = filtered.slice((_readPage-1)*PAGE_SIZE, _readPage*PAGE_SIZE);
@@ -1100,7 +1139,7 @@ function renderReadings() {
     const gc = g>p.gHigh ? 'badge badge-high' : g<p.gLow ? 'badge badge-low' : 'badge badge-norm';
     const bp = r.bpSys ? `${r.bpSys}/${r.bpDia}` : '';
     return `<tr data-id="${r.id}" onclick="selRow('reading','${r.id}',this)" ondblclick="editSelectedReading()">
-      <td>${r.date||''}</td><td>${r.dayOfWeek||''}</td><td>${r.weight||''}</td>
+      <td>${_normDate(r.date)}</td><td>${r.dayOfWeek||''}</td><td>${r.weight||''}</td>
       <td>${bp}</td><td>${r.pulse||''}</td>
       <td><span class="${gc}">${r.glucoseMmol||''}</span></td><td>${r.glucoseMgdl||''}</td>
       <td>${r.mealType||''}</td><td>${r.timeOfReading||''}</td>
