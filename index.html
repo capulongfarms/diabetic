@@ -938,7 +938,7 @@ async function loadAllData() {
   const [r,t,ws,wv] = await Promise.all([
     dbAll('readings'), dbAll('tests'), dbAll('wifesum'), dbAll('wifev')
   ]);
-  _data.readings = r.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  _data.readings = r; _sortReadings();
   _data.tests    = t.sort((a,b) => (b.testDate||'').localeCompare(a.testDate||''));
   _data.wifesum  = ws.sort((a,b) => (+a.periodNum||0) - (+b.periodNum||0));
   _data.wifev    = wv.sort((a,b) => (b.visitDate||'').localeCompare(a.visitDate||''));
@@ -1126,6 +1126,10 @@ function _normDate(v) {
   }
   return String(v);
 }
+function _sortReadings() {
+  const ms = v => { const d = _normDate(v); return d ? new Date(d).getTime() : 0; };
+  _data.readings.sort((a,b) => ms(b.date) - ms(a.date)); // newest first
+}
 function renderReadings() {
   const q = ($('read-search').value||'').toLowerCase();
   const filtered = _data.readings.filter(r => !q ||
@@ -1268,7 +1272,7 @@ window.saveReading = async function() {
       toast('Reading added', 'success');
     }
 
-    _data.readings.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    _sortReadings();
     closeModal('modal-reading'); renderReadings(); renderSummary();
     _sel.reading = null;
   } catch(e) {
@@ -1321,7 +1325,7 @@ window.importReadingsCSV = function() {
       if(ex.has(k)){sk++;continue;}
       const id=await dbAdd('readings',d); _data.readings.unshift({...d,id}); ex.add(k); n++;
     }
-    _data.readings.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    _sortReadings();
     renderReadings(); renderSummary(); toast(`Imported ${n}, skipped ${sk}`,'success');
   });
 };
@@ -1343,7 +1347,7 @@ window.restoreAllData = function() {
       let added={r:0,t:0,ws:0,wv:0},sk=0;
       const exR=new Set(_data.readings.map(r=>(r.date||'')+'|'+(r.timeOfReading||'')));
       for(const r of(payload.readings||[])){const k=(r.date||'')+'|'+(r.timeOfReading||'');if(exR.has(k)){sk++;continue;}const{id:_,...rest}=r;const nid=await dbAdd('readings',rest);_data.readings.unshift({...rest,id:nid});exR.add(k);added.r++;}
-      _data.readings.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      _sortReadings();
       const exT=new Set(_data.tests.map(s=>(s.testDate||'')+'|'+(s.location||'')));
       for(const s of(payload.tests||[])){const k=(s.testDate||'')+'|'+(s.location||'');if(exT.has(k)){sk++;continue;}const{id:_,...rest}=s;const nid=await dbAdd('tests',rest);_data.tests.unshift({...rest,id:nid});exT.add(k);added.t++;}
       const exWS=new Set(_data.wifesum.map(r=>String(r.periodNum||'')));
@@ -1877,7 +1881,7 @@ window.importAllExcel = function() {
             const nr = {...r, id:nid}; _data.readings.unshift(nr); rMap.set(k, nr); added.r++;
           }
         }
-        _data.readings.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+        _sortReadings();
         lsSet(lkey('readings'), _data.readings); // one localStorage write for all updates
         st.textContent = `⏳ Syncing ${fbPairs.length} readings to Firebase…`;
         await fbFlush('readings', fbPairs);
