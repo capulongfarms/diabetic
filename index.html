@@ -1789,6 +1789,25 @@ window.importAllExcel = function() {
       const wb  = XLSX.read(new Uint8Array(buf), { type: 'array' });
       let added = {r:0,t:0,ws:0,wv:0}, upd = {r:0,t:0,ws:0,wv:0};
 
+      // Normalize date values — Excel may return strings, Date objects, or serial numbers
+      const xlDate = v => {
+        if (!v && v !== 0) return '';
+        if (typeof v === 'string') return v.slice(0,10);
+        if (v instanceof Date) return v.toISOString().slice(0,10);
+        if (typeof v === 'number') return new Date(Math.round((v-25569)*86400*1000)).toISOString().slice(0,10);
+        return String(v);
+      };
+
+      // Fire Firestore writes in parallel batches of 100 (non-blocking for caller)
+      const fbFlush = async (name, pairs) => {
+        if (!_db || !pairs.length) return;
+        for (let i = 0; i < pairs.length; i += 100) {
+          await Promise.all(pairs.slice(i, i+100).map(([id, data]) =>
+            setDoc(docRef(name, id), {...data, _ts: serverTimestamp()}).catch(err => console.warn('Firebase sync:', err))
+          ));
+        }
+      };
+
       // ── Readings ────────────────────────────────────────────────────────
       const wsR = wb.Sheets['Readings'];
       if (wsR) {
@@ -1800,21 +1819,28 @@ window.importAllExcel = function() {
           'Stress Signs':'stressSign','Exercise':'exercise','Remarks':'remarks'};
         const NUM = new Set(['weight','bpSys','bpDia','pulse','glucoseMgdl','glucoseMmol']);
         const rows = XLSX.utils.sheet_to_json(wsR, {defval:''});
+        // O(1) lookup map — avoids O(n²) find() over 2850 rows
+        const rMap = new Map(_data.readings.map(x => [(x.date||'')+'|'+(x.timeOfReading||''), x]));
+        const fbPairs = [];
         for (const row of rows) {
           const r = {};
           for (const [h,f] of Object.entries(HDR)) r[f] = row[h] ?? '';
+          r.date = xlDate(r.date);
           for (const f of NUM) r[f] = r[f] !== '' ? +r[f] || null : null;
           const k = (r.date||'')+'|'+(r.timeOfReading||'');
-          const ex = _data.readings.find(x=>(x.date||'')+'|'+(x.timeOfReading||'')===k);
+          const ex = rMap.get(k);
           if (ex) {
-            await dbSet('readings', ex.id, r);
-            Object.assign(ex, r); upd.r++;
+            Object.assign(ex, r);
+            fbPairs.push([ex.id, r]); upd.r++;
           } else {
             const nid = await dbAdd('readings', r);
-            _data.readings.unshift({...r, id:nid}); added.r++;
+            const nr = {...r, id:nid}; _data.readings.unshift(nr); rMap.set(k, nr); added.r++;
           }
         }
         _data.readings.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+        lsSet(lkey('readings'), _data.readings); // one localStorage write for all updates
+        st.textContent = `⏳ Syncing ${fbPairs.length} readings to Firebase…`;
+        await fbFlush('readings', fbPairs);
       }
 
       // ── Test Records (re-group flattened rows into sessions) ─────────────
@@ -1823,56 +1849,68 @@ window.importAllExcel = function() {
         const rows = XLSX.utils.sheet_to_json(wsT, {defval:''});
         const sessMap = {};
         for (const row of rows) {
-          const key = (row['Test Date']||'')+'|'+(row['Location']||'')+'|'+(row['Notes']||'');
-          if (!sessMap[key]) sessMap[key] = {testDate:row['Test Date']||'', location:row['Location']||'', notes:row['Notes']||'', results:[]};
+          const key = xlDate(row['Test Date'])+'|'+(row['Location']||'')+'|'+(row['Notes']||'');
+          if (!sessMap[key]) sessMap[key] = {testDate:xlDate(row['Test Date']), location:row['Location']||'', notes:row['Notes']||'', results:[]};
           if (row['Criterion']) sessMap[key].results.push({category:row['Category']||'', criterion:row['Criterion']||'', value:String(row['Value']||''), unit:row['Unit']||'', flag:row['Flag']||''});
         }
+        const tMap = new Map(_data.tests.map(s => [(s.testDate||'')+'|'+(s.location||''), s]));
+        const fbPairs = [];
         for (const sess of Object.values(sessMap)) {
           const k = (sess.testDate||'')+'|'+(sess.location||'');
-          const ex = _data.tests.find(s=>(s.testDate||'')+'|'+(s.location||'')===k);
+          const ex = tMap.get(k);
           if (ex) {
-            await dbSet('tests', ex.id, sess);
-            Object.assign(ex, sess); upd.t++;
+            Object.assign(ex, sess);
+            fbPairs.push([ex.id, sess]); upd.t++;
           } else {
             const nid = await dbAdd('tests', sess);
-            _data.tests.unshift({...sess, id:nid}); added.t++;
+            const ns = {...sess, id:nid}; _data.tests.unshift(ns); tMap.set(k, ns); added.t++;
           }
         }
+        lsSet(lkey('tests'), _data.tests);
+        await fbFlush('tests', fbPairs);
       }
 
       // ── Wife Treatment Summary ───────────────────────────────────────────
       const wsWS = wb.Sheets['Wife Treatment Summary'];
       if (wsWS) {
         const rows = XLSX.utils.sheet_to_json(wsWS, {defval:''});
+        const wsMap = new Map(_data.wifesum.map(x => [String(x.periodNum||''), x]));
+        const fbPairs = [];
         for (const row of rows) {
           const r = {periodNum:row['Period #']||'', period:row['Period']||'', doctor:row['Doctor']||'', clinic:row['Clinic']||'', medications:row['Medications']||'', steroids:row['Steroids']||'', notes:row['Notes']||''};
-          const ex = _data.wifesum.find(x=>String(x.periodNum||'')===String(r.periodNum||''));
+          const ex = wsMap.get(String(r.periodNum||''));
           if (ex) {
-            await dbSet('wifesum', ex.id, r);
-            Object.assign(ex, r); upd.ws++;
+            Object.assign(ex, r);
+            fbPairs.push([ex.id, r]); upd.ws++;
           } else {
             const nid = await dbAdd('wifesum', r);
-            _data.wifesum.push({...r, id:nid}); added.ws++;
+            const nr = {...r, id:nid}; _data.wifesum.push(nr); wsMap.set(String(r.periodNum||''), nr); added.ws++;
           }
         }
+        lsSet(lkey('wifesum'), _data.wifesum);
+        await fbFlush('wifesum', fbPairs);
       }
 
       // ── Wife Visit Records ───────────────────────────────────────────────
       const wsWV = wb.Sheets['Wife Visit Records'];
       if (wsWV) {
         const rows = XLSX.utils.sheet_to_json(wsWV, {defval:''});
+        const wvMap = new Map(_data.wifev.map(x => [(x.visitDate||'')+'|'+(x.hospital||'')+'|'+(x.description||''), x]));
+        const fbPairs = [];
         for (const row of rows) {
-          const r = {visitDate:row['Visit Date']||'', hospital:row['Hospital/Clinic']||'', description:row['Description']||'', doctor:row['Doctor']||'', tests:row['Tests Conducted']||'', medications:row['Medications']||'', remarks:row['Remarks']||''};
+          const r = {visitDate:xlDate(row['Visit Date']), hospital:row['Hospital/Clinic']||'', description:row['Description']||'', doctor:row['Doctor']||'', tests:row['Tests Conducted']||'', medications:row['Medications']||'', remarks:row['Remarks']||''};
           const k = (r.visitDate||'')+'|'+(r.hospital||'')+'|'+(r.description||'');
-          const ex = _data.wifev.find(x=>(x.visitDate||'')+'|'+(x.hospital||'')+'|'+(x.description||'')===k);
+          const ex = wvMap.get(k);
           if (ex) {
-            await dbSet('wifev', ex.id, r);
-            Object.assign(ex, r); upd.wv++;
+            Object.assign(ex, r);
+            fbPairs.push([ex.id, r]); upd.wv++;
           } else {
             const nid = await dbAdd('wifev', r);
-            _data.wifev.unshift({...r, id:nid}); added.wv++;
+            const nr = {...r, id:nid}; _data.wifev.unshift(nr); wvMap.set(k, nr); added.wv++;
           }
         }
+        lsSet(lkey('wifev'), _data.wifev);
+        await fbFlush('wifev', fbPairs);
       }
 
       $('info-count').textContent = _data.readings.length;
