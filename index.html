@@ -1776,7 +1776,7 @@ window.exportAllExcel = function() {
   }
 };
 
-// ── IMPORT ALL FROM EXCEL ─────────────────────────────────────────────────────
+// ── IMPORT ALL FROM EXCEL (upsert — add new, update changed) ─────────────────
 window.importAllExcel = function() {
   const st = $('excel-status');
   const inp = document.createElement('input');
@@ -1787,7 +1787,7 @@ window.importAllExcel = function() {
     try {
       const buf = await file.arrayBuffer();
       const wb  = XLSX.read(new Uint8Array(buf), { type: 'array' });
-      let added = {r:0,t:0,ws:0,wv:0}, sk = 0;
+      let added = {r:0,t:0,ws:0,wv:0}, upd = {r:0,t:0,ws:0,wv:0};
 
       // ── Readings ────────────────────────────────────────────────────────
       const wsR = wb.Sheets['Readings'];
@@ -1800,15 +1800,19 @@ window.importAllExcel = function() {
           'Stress Signs':'stressSign','Exercise':'exercise','Remarks':'remarks'};
         const NUM = new Set(['weight','bpSys','bpDia','pulse','glucoseMgdl','glucoseMmol']);
         const rows = XLSX.utils.sheet_to_json(wsR, {defval:''});
-        const exR  = new Set(_data.readings.map(r=>(r.date||'')+'|'+(r.timeOfReading||'')));
         for (const row of rows) {
           const r = {};
           for (const [h,f] of Object.entries(HDR)) r[f] = row[h] ?? '';
           for (const f of NUM) r[f] = r[f] !== '' ? +r[f] || null : null;
           const k = (r.date||'')+'|'+(r.timeOfReading||'');
-          if (exR.has(k)) { sk++; continue; }
-          const nid = await dbAdd('readings', r);
-          _data.readings.unshift({...r, id:nid}); exR.add(k); added.r++;
+          const ex = _data.readings.find(x=>(x.date||'')+'|'+(x.timeOfReading||'')===k);
+          if (ex) {
+            await dbSet('readings', ex.id, r);
+            Object.assign(ex, r); upd.r++;
+          } else {
+            const nid = await dbAdd('readings', r);
+            _data.readings.unshift({...r, id:nid}); added.r++;
+          }
         }
         _data.readings.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       }
@@ -1823,12 +1827,16 @@ window.importAllExcel = function() {
           if (!sessMap[key]) sessMap[key] = {testDate:row['Test Date']||'', location:row['Location']||'', notes:row['Notes']||'', results:[]};
           if (row['Criterion']) sessMap[key].results.push({category:row['Category']||'', criterion:row['Criterion']||'', value:String(row['Value']||''), unit:row['Unit']||'', flag:row['Flag']||''});
         }
-        const exT = new Set(_data.tests.map(s=>(s.testDate||'')+'|'+(s.location||'')));
         for (const sess of Object.values(sessMap)) {
           const k = (sess.testDate||'')+'|'+(sess.location||'');
-          if (exT.has(k)) { sk++; continue; }
-          const nid = await dbAdd('tests', sess);
-          _data.tests.unshift({...sess, id:nid}); exT.add(k); added.t++;
+          const ex = _data.tests.find(s=>(s.testDate||'')+'|'+(s.location||'')===k);
+          if (ex) {
+            await dbSet('tests', ex.id, sess);
+            Object.assign(ex, sess); upd.t++;
+          } else {
+            const nid = await dbAdd('tests', sess);
+            _data.tests.unshift({...sess, id:nid}); added.t++;
+          }
         }
       }
 
@@ -1836,12 +1844,16 @@ window.importAllExcel = function() {
       const wsWS = wb.Sheets['Wife Treatment Summary'];
       if (wsWS) {
         const rows = XLSX.utils.sheet_to_json(wsWS, {defval:''});
-        const exWS = new Set(_data.wifesum.map(r=>String(r.periodNum||'')));
         for (const row of rows) {
           const r = {periodNum:row['Period #']||'', period:row['Period']||'', doctor:row['Doctor']||'', clinic:row['Clinic']||'', medications:row['Medications']||'', steroids:row['Steroids']||'', notes:row['Notes']||''};
-          if (exWS.has(String(r.periodNum||''))) { sk++; continue; }
-          const nid = await dbAdd('wifesum', r);
-          _data.wifesum.push({...r, id:nid}); exWS.add(String(r.periodNum||'')); added.ws++;
+          const ex = _data.wifesum.find(x=>String(x.periodNum||'')===String(r.periodNum||''));
+          if (ex) {
+            await dbSet('wifesum', ex.id, r);
+            Object.assign(ex, r); upd.ws++;
+          } else {
+            const nid = await dbAdd('wifesum', r);
+            _data.wifesum.push({...r, id:nid}); added.ws++;
+          }
         }
       }
 
@@ -1849,20 +1861,24 @@ window.importAllExcel = function() {
       const wsWV = wb.Sheets['Wife Visit Records'];
       if (wsWV) {
         const rows = XLSX.utils.sheet_to_json(wsWV, {defval:''});
-        const exWV = new Set(_data.wifev.map(r=>(r.visitDate||'')+'|'+(r.hospital||'')+'|'+(r.description||'')));
         for (const row of rows) {
           const r = {visitDate:row['Visit Date']||'', hospital:row['Hospital/Clinic']||'', description:row['Description']||'', doctor:row['Doctor']||'', tests:row['Tests Conducted']||'', medications:row['Medications']||'', remarks:row['Remarks']||''};
           const k = (r.visitDate||'')+'|'+(r.hospital||'')+'|'+(r.description||'');
-          if (exWV.has(k)) { sk++; continue; }
-          const nid = await dbAdd('wifev', r);
-          _data.wifev.unshift({...r, id:nid}); exWV.add(k); added.wv++;
+          const ex = _data.wifev.find(x=>(x.visitDate||'')+'|'+(x.hospital||'')+'|'+(x.description||'')===k);
+          if (ex) {
+            await dbSet('wifev', ex.id, r);
+            Object.assign(ex, r); upd.wv++;
+          } else {
+            const nid = await dbAdd('wifev', r);
+            _data.wifev.unshift({...r, id:nid}); added.wv++;
+          }
         }
       }
 
       $('info-count').textContent = _data.readings.length;
       buildYearFilters(); renderReadings(); renderWifeSum(); renderWifeVisits(); renderTestSessions(); renderSummary();
       st.style.color = 'var(--accent2)';
-      st.textContent = `✅ Imported — Added: ${added.r} readings, ${added.t} tests, ${added.ws} wife periods, ${added.wv} wife visits. Skipped: ${sk} duplicates.`;
+      st.textContent = `✅ Done — Added: ${added.r} readings, ${added.t} tests, ${added.ws} wife periods, ${added.wv} wife visits. Updated: ${upd.r} readings, ${upd.t} tests, ${upd.ws} wife periods, ${upd.wv} wife visits.`;
       toast('Excel import complete!', 'success');
     } catch(e) {
       st.style.color = 'var(--danger)';
