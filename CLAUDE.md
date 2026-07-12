@@ -32,7 +32,7 @@ All application code is in `index.html` — styles, markup, and a large `<script
 1. Checks `navigator.onLine` — toasts an error if offline; registers `online`/`offline` event listeners.
 2. Initializes Firebase (`initializeApp` + `getFirestore`) — sets `_db`. These are synchronous and always succeed.
 3. Hides the auth screen, shows the app shell immediately (no login gate).
-4. Calls `loadAllData()` — fetches all 4 collections in parallel via `dbAll()`. Firebase is always tried first; if `getDocs` throws (offline / rules error), `dbAll` falls back to localStorage and toasts a warning. The `info-storage` status indicator is updated accordingly.
+4. Calls `loadAllData()` — fetches all 4 collections in parallel via `dbAll()`. Firebase is always tried first; if `getDocs` throws (offline / rules error), `dbAll` falls back to localStorage and toasts a warning. The `info-storage` status indicator is updated accordingly. After fetching, readings are sorted newest-first via `_sortReadings()`.
 5. Calls `renderSummary()`.
 6. Calls `_applySecurityGuards()` — wraps all `window.*` write functions with `_guardedAsync()`. Guards are applied here (end of init) to eliminate any race window.
 
@@ -56,6 +56,11 @@ Each array maps to a Firestore sub-collection under `users/{FIXED_UID}/{name}`. 
 | `_sortField` | `'date'` | Active sort column |
 | `_sortAsc` | `false` | Sort direction (false = newest-first) |
 | `_charts` | `{}` | Live Chart.js instances keyed by canvas ID; each is `.destroy()`ed before re-render |
+
+**Module-level helpers:**
+
+- `_normDate(v)` — normalizes any date value (string, `Date`, live Firestore Timestamp, or plain `{seconds,nanoseconds}` object from JSON-parsed localStorage) to a `YYYY-MM-DD` string. Used for both display in the readings table and sort comparisons.
+- `_sortReadings()` — sorts `_data.readings` newest-first using `_normDate` for reliable ordering regardless of what type the `date` field holds. Called from `loadAllData`, `saveReading`, CSV import, JSON restore, and Excel import — every path that mutates `_data.readings`.
 
 **Reading record schema** (fields saved by `saveReading`):
 
@@ -99,7 +104,7 @@ Eight panels are toggled by showing/hiding `<section id="dash-*">` elements. Laz
 | Panel ID | Purpose |
 |---|---|
 | `dash-summary` | Overview stats + 30-day glucose trend chart |
-| `dash-readings` | Daily records CRUD table (50/page, searchable, sortable) |
+| `dash-readings` | Daily records CRUD table (50/page, searchable, sortable); default order newest-first |
 | `dash-charts` | Chart.js visualizations (glucose, BP, weight by day/month/year) |
 | `dash-diet` | Meal impact analysis and rankings |
 | `dash-bp` | Blood pressure analysis with AHA staging |
@@ -148,12 +153,31 @@ match /{document=**} { allow read, write: if false; }
 
 Stored in `localStorage` under the key `prefs`. Contains user/spouse names, glucose thresholds (mmol/L), and BP thresholds (systolic/diastolic). These drive chart coloring and status indicators throughout the app.
 
+### Readings table sort
+
+`sortBy(f)` uses typed comparison based on the column:
+- **`date`** — parsed to milliseconds via `new Date(_normDate(v))` for correct chronological order regardless of stored value type or format.
+- **Numeric columns** (`weight`, `bpSys`, `bpDia`, `pulse`, `glucoseMgdl`, `glucoseMmol`) — compared as numbers.
+- **All other columns** — `localeCompare` string sort.
+
+`_normDate` is applied first to unwrap any Firestore Timestamp or `{seconds,nanoseconds}` object before comparison. Invalid/missing dates sort to the end.
+
+### Add New Reading modal defaults
+
+When opening the modal in **Add** mode, these fields are pre-populated:
+- **Meal Taken** → Dinner
+- **Remarks** → "Full medication"
+- **Medications — Hypertension** → first 3 options pre-ticked
+- **Medications — Diabetes** → first 3 options pre-ticked
+
+**Edit** mode always loads from the saved record — defaults do not apply.
+
 ## Key Conventions
 
 - **No framework** — UI updates are direct DOM manipulation (`innerHTML`, `textContent`, `classList`). `$ = id => document.getElementById(id)` is the only selector shorthand.
-- **`window.*` exposure** — render and action functions are attached to `window` so inline HTML `onclick` handlers can reach them (e.g., `window.saveReading`, `window.renderSummary`).
+- **`window.*` exposure** — render and action functions are attached to `window` so inline HTML `onclick` handlers can reach them (e.g., `window.saveReading`, `window.renderSummary`). Pagination callbacks **must** be named `window.*` functions (e.g., `window.goReadPage`) — embedding a module-scoped lambda via string interpolation silently fails because inline handlers run in global scope where module variables are not accessible.
 - **Toast notifications** — `toast(message, type)` for all user feedback (`type` is `'success'`, `'error'`, or `'info'`).
 - **Button debounce** — save buttons are disabled immediately on click and re-enabled in a `finally` block to prevent double-submits.
 - **Firebase config** is hardcoded in the script; this is intentional for this private single-user app.
-- **Excel export** — `exportAllExcel()` writes all four collections to a single `.xlsx` file with separate sheets via SheetJS, compatible with the companion Python app format.
+- **Excel export/import** — `exportAllExcel()` and `importAllExcel()` read/write all four collections to/from a single `.xlsx` file via SheetJS. Import uses **upsert** logic: readings matched by `date+timeOfReading`, tests by `testDate+location`, wife periods by `periodNum`, wife visits by `visitDate+hospital+description`. Matched rows update in place (`Object.assign`); unmatched rows are added as new records. Firebase writes are batched in parallel groups of 100; localStorage is written once per collection after all upserts are resolved. Dates from Excel are normalized to `YYYY-MM-DD` strings via an `xlDate()` helper that handles text strings, `Date` objects, and Excel serial numbers.
 - **Data files** in `/Files/` are manual backups and exports — not used at runtime.
