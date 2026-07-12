@@ -1149,8 +1149,9 @@ function renderReadings() {
       <td>${trunc(r.remarks,28)}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="13" style="text-align:center;color:var(--text3);padding:28px">No records found</td></tr>';
-  renderPagination('read-pagination', _readPage, pages, filtered.length, p => { _readPage=p; renderReadings(); });
+  renderPagination('read-pagination', _readPage, pages, filtered.length, 'goReadPage');
 }
+window.goReadPage = function(p) { _readPage = p; renderReadings(); };
 function renderPagination(elId, cur, total, count, cb) {
   const el = $(elId); if (!el || total<=1) { if(el) el.innerHTML=''; return; }
   const s=Math.max(1,cur-2), e=Math.min(total,cur+2); let h='';
