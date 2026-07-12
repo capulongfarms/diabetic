@@ -553,6 +553,18 @@ main{flex:1;overflow:hidden;}
         </div>
         <div id="excel-status" style="margin-top:8px;font-size:.8rem;"></div>
       </div>
+
+      <div class="settings-section" style="border-color:var(--danger)">
+        <h3 style="color:var(--danger)">🗑️ Danger Zone — Reset All Data</h3>
+        <p style="font-size:.8rem;color:var(--text2);margin-bottom:12px">
+          Permanently deletes <strong>ALL</strong> records from Firebase and localStorage across all four collections (readings, tests, wife periods, wife visits). Use this before a clean re-import to eliminate duplicates.
+          <strong style="color:var(--danger)"> Cannot be undone.</strong>
+        </p>
+        <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+          <button class="btn btn-danger" onclick="resetAllData()">🗑️ Reset All Database</button>
+        </div>
+        <div id="reset-status" style="margin-top:8px;font-size:.8rem;"></div>
+      </div>
       <div class="settings-section">
         <h3>📤 Export Individual CSV</h3>
         <div class="toolbar">
@@ -1361,6 +1373,30 @@ window.restoreAllData = function() {
     } catch(e){st.style.color='var(--danger)';st.textContent='❌ Restore failed: '+e.message;}
   });
 };
+window.resetAllData = async function() {
+  if (!confirm('⚠️ RESET ALL DATA\n\nThis will permanently delete ALL records from Firebase and localStorage.\n\nThis cannot be undone. Continue?')) return;
+  const st = $('reset-status');
+  st.style.color = 'var(--text2)'; st.textContent = '⏳ Deleting all records from Firebase…';
+  try {
+    const COLS = ['readings','tests','wifesum','wifev'];
+    for (const name of COLS) {
+      if (_db) {
+        const snap = await getDocs(colRef(name));
+        for (let i = 0; i < snap.docs.length; i += 100)
+          await Promise.all(snap.docs.slice(i,i+100).map(d => deleteDoc(d.ref).catch(console.warn)));
+      }
+      localStorage.removeItem(lkey(name));
+    }
+    _data.readings = []; _data.tests = []; _data.wifesum = []; _data.wifev = [];
+    _sel.reading = null; _sel.test = null; _sel.wifesum = null; _sel.wifev = null;
+    $('info-count').textContent = '0';
+    buildYearFilters(); renderReadings(); renderWifeSum(); renderWifeVisits(); renderTestSessions(); renderSummary();
+    st.style.color = 'var(--accent2)'; st.textContent = '✅ All data deleted. Ready for fresh import.';
+    toast('Database cleared','success');
+  } catch(e) {
+    st.style.color = 'var(--danger)'; st.textContent = '❌ Reset failed: ' + e.message;
+  }
+};
 window.saveSettingsFile = function() {
   downloadFile(`DiabeticsSettings_${new Date().toISOString().slice(0,10)}.json`,'application/json',JSON.stringify({_version:1,preferences:lsGet('prefs')||{}},null,2));
   toast('Settings file saved','success');
@@ -1836,8 +1872,12 @@ window.importAllExcel = function() {
       // Normalize date values — Excel may return strings, Date objects, or serial numbers
       const xlDate = v => {
         if (!v && v !== 0) return '';
-        if (typeof v === 'string') return v.slice(0,10);
-        if (v instanceof Date) return v.toISOString().slice(0,10);
+        const toYMD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        if (typeof v === 'string') {
+          if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0,10); // already ISO
+          const d = new Date(v); return isNaN(d) ? v.slice(0,10) : toYMD(d); // parse M/D/YYYY etc.
+        }
+        if (v instanceof Date) return toYMD(v);
         if (typeof v === 'number') return new Date(Math.round((v-25569)*86400*1000)).toISOString().slice(0,10);
         return String(v);
       };
@@ -2310,6 +2350,7 @@ function _applySecurityGuards() {
     // ── Settings ───────────────────────────────────────────────────────────
     ['backupAllData',          'Backup Database'],
     ['restoreAllData',         'Restore Database'],
+    ['resetAllData',           'Reset All Database'],
     ['saveSettingsFile',       'Save Settings File'],
     ['restoreSettingsFile',    'Restore Settings File'],
     // saveFirebaseConfig removed — config is hardcoded, no UI button
