@@ -1429,6 +1429,12 @@ function renderBarChart(cid, labels, datasets) {
              y:{ticks:{color:'#5a6580',font:{size:9}},grid:{color:'#2a3348'}} }
   }});
 }
+// Returns a flat dashed reference-line dataset (works on both line and bar charts)
+function refLine(label, val, color, n) {
+  return {type:'line', label, data:Array(n).fill(val), borderColor:color,
+          backgroundColor:'transparent', tension:0, pointRadius:0,
+          borderWidth:1.5, borderDash:[6,4], order:-1};
+}
 function buildYearFilters() {
   const yrs = [...new Set(_data.readings.filter(r=>r.date).map(r=>r.date.slice(0,4)))].sort((a,b)=>b-a);
   ['chart-year','bp-year'].forEach(id => { const el=$(id); if(!el) return; el.innerHTML='<option value="all">All Years</option>'+yrs.map(y=>`<option>${y}</option>`).join(''); });
@@ -1445,24 +1451,27 @@ window.renderCharts = function() {
     const roll=vals.map((_,i)=>{ const sl=vals.slice(Math.max(0,i-29),i+1); return arrAvg(sl); });
     renderLineChart('c-trend',labels,[
       {label:'Glucose mmol/L',data:vals,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.06)',tension:.2,pointRadius:2,borderWidth:1.5},
-      {label:'30-pt Avg',data:roll,borderColor:'#10b981',backgroundColor:'transparent',tension:.4,pointRadius:0,borderWidth:2}
+      {label:'30-pt Avg',data:roll,borderColor:'#10b981',backgroundColor:'transparent',tension:.4,pointRadius:0,borderWidth:2},
+      refLine('Target ≤6.4 mmol/L',6.4,'rgba(245,158,11,.85)',labels.length)
     ],{high:p.gHigh,low:p.gLow});
   }
   const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const dm={}; DAYS.forEach(d=>dm[d]=[]);
   data.filter(r=>r.glucoseMmol&&r.dayOfWeek).forEach(r=>{if(dm[r.dayOfWeek])dm[r.dayOfWeek].push(+r.glucoseMmol);});
-  renderBarChart('c-dow',DAYS,[{label:'Avg Glucose mmol/L',data:DAYS.map(d=>dm[d].length?+arrAvg(dm[d]).toFixed(2):0),backgroundColor:DAYS.map(d=>arrAvg(dm[d])>p.gHigh?'rgba(239,68,68,.7)':'rgba(16,185,129,.7)'),borderRadius:4}]);
+  renderBarChart('c-dow',DAYS,[{label:'Avg Glucose mmol/L',data:DAYS.map(d=>dm[d].length?+arrAvg(dm[d]).toFixed(2):0),backgroundColor:DAYS.map(d=>arrAvg(dm[d])>p.gHigh?'rgba(239,68,68,.7)':'rgba(16,185,129,.7)'),borderRadius:4},refLine('Target ≤6.4',6.4,'rgba(245,158,11,.85)',7)]);
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const mm={}; MONTHS.forEach(m=>mm[m]=[]);
   data.filter(r=>r.glucoseMmol&&r.date).forEach(r=>{const mn=new Date(r.date+'T12:00').toLocaleString('en',{month:'short'});if(mm[mn])mm[mn].push(+r.glucoseMmol);});
-  renderBarChart('c-month',MONTHS,[{label:'Avg Glucose mmol/L',data:MONTHS.map(m=>mm[m].length?+arrAvg(mm[m]).toFixed(2):0),backgroundColor:MONTHS.map(m=>{const v=arrAvg(mm[m]);return v>p.gHigh?'rgba(239,68,68,.7)':v>7?'rgba(245,158,11,.7)':'rgba(16,185,129,.7)';}),borderRadius:4}]);
+  renderBarChart('c-month',MONTHS,[{label:'Avg Glucose mmol/L',data:MONTHS.map(m=>mm[m].length?+arrAvg(mm[m]).toFixed(2):0),backgroundColor:MONTHS.map(m=>{const v=arrAvg(mm[m]);return v>p.gHigh?'rgba(239,68,68,.7)':v>7?'rgba(245,158,11,.7)':'rgba(16,185,129,.7)';}),borderRadius:4},refLine('Target ≤6.4',6.4,'rgba(245,158,11,.85)',12)]);
   const ym={}; data.filter(r=>r.glucoseMmol&&r.date).forEach(r=>{const y=r.date.slice(0,4);if(!ym[y])ym[y]=[];ym[y].push(+r.glucoseMmol);});
   const yrs=Object.keys(ym).sort();
-  renderLineChart('c-year',yrs,[{label:'Yearly Avg mmol/L',data:yrs.map(y=>+arrAvg(ym[y]).toFixed(2)),borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.08)',tension:.3,pointRadius:6,pointBackgroundColor:'#8b5cf6'}],{high:p.gHigh});
+  renderLineChart('c-year',yrs,[{label:'Yearly Avg mmol/L',data:yrs.map(y=>+arrAvg(ym[y]).toFixed(2)),borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.08)',tension:.3,pointRadius:6,pointBackgroundColor:'#8b5cf6'},refLine('Target ≤6.4',6.4,'rgba(245,158,11,.85)',yrs.length)],{high:p.gHigh});
   const bpPts=data.filter(r=>r.bpSys&&r.bpDia).sort((a,b)=>a.date.localeCompare(b.date));
   if(bpPts.length) renderLineChart('c-bp',bpPts.map(r=>r.date),[
     {label:'Systolic',data:bpPts.map(r=>+r.bpSys),borderColor:'rgba(239,68,68,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2},
-    {label:'Diastolic',data:bpPts.map(r=>+r.bpDia),borderColor:'rgba(59,130,246,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2}
+    {label:'Diastolic',data:bpPts.map(r=>+r.bpDia),borderColor:'rgba(59,130,246,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2},
+    refLine('Systolic Norm (120)',120,'rgba(239,68,68,.4)',bpPts.length),
+    refLine('Diastolic Norm (80)',80,'rgba(59,130,246,.4)',bpPts.length)
   ],{high:p.bpSys});
   const wtPts=data.filter(r=>r.weight).sort((a,b)=>a.date.localeCompare(b.date));
   if(wtPts.length) renderLineChart('c-wt',wtPts.map(r=>r.date),[{label:'Weight kg',data:wtPts.map(r=>+r.weight),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.08)',tension:.3,pointRadius:3}]);
@@ -1538,7 +1547,9 @@ window.renderBP = function() {
     </div>`;
   renderLineChart('c-bptrend',data.map(r=>r.date),[
     {label:'Systolic',data:sv,borderColor:'rgba(239,68,68,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2},
-    {label:'Diastolic',data:dv,borderColor:'rgba(59,130,246,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2}
+    {label:'Diastolic',data:dv,borderColor:'rgba(59,130,246,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2},
+    refLine('Systolic Norm (120)',120,'rgba(239,68,68,.4)',data.length),
+    refLine('Diastolic Norm (80)',80,'rgba(59,130,246,.4)',data.length)
   ],{high:p.bpSys});
   const histBins=(arr,min,max,n)=>{const sz=(max-min)/n,c=Array(n).fill(0);arr.forEach(v=>{const b=Math.min(n-1,Math.floor((v-min)/sz));if(b>=0)c[b]++;});return{labels:Array.from({length:n},(_,i)=>Math.round(min+i*sz)),counts:c};};
   const{labels:sl,counts:sc}=histBins(sv,80,220,28);const{labels:dl,counts:dc}=histBins(dv,40,130,18);
