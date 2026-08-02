@@ -1470,8 +1470,8 @@ window.renderCharts = function() {
   if(bpPts.length) renderLineChart('c-bp',bpPts.map(r=>r.date),[
     {label:'Systolic',data:bpPts.map(r=>+r.bpSys),borderColor:'rgba(239,68,68,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2},
     {label:'Diastolic',data:bpPts.map(r=>+r.bpDia),borderColor:'rgba(59,130,246,.8)',backgroundColor:'transparent',tension:.2,pointRadius:2},
-    refLine('Systolic Norm (120)',120,'rgba(239,68,68,.4)',bpPts.length),
-    refLine('Diastolic Norm (80)',80,'rgba(59,130,246,.4)',bpPts.length)
+    refLine('Systolic Norm (120)',120,'rgba(59,130,246,.6)',bpPts.length),
+    refLine('Diastolic Norm (80)',80,'rgba(239,68,68,.6)',bpPts.length)
   ],{high:p.bpSys});
   const wtPts=data.filter(r=>r.weight).sort((a,b)=>a.date.localeCompare(b.date));
   if(wtPts.length) renderLineChart('c-wt',wtPts.map(r=>r.date),[{label:'Weight kg',data:wtPts.map(r=>+r.weight),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.08)',tension:.3,pointRadius:3}]);
